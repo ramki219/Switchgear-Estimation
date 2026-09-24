@@ -1,0 +1,6 @@
+{
+  "name": "LV Switchgear Estimator",
+  "description": "Production-grade Low Voltage Switchgear estimation, master data catalog, component pricing, and engineering quotation system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
