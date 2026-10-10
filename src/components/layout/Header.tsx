@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Download, RefreshCw, Database, DollarSign, Cpu } from 'lucide-react';
+import { Plus, Download, RefreshCw, Database, DollarSign } from 'lucide-react';
 import { NavView } from './Sidebar';
 
 interface HeaderProps {
@@ -23,6 +23,14 @@ export const Header: React.FC<HeaderProps> = ({
     dashboard: {
       title: 'Estimation Operations Dashboard',
       subtitle: 'Overview of switchgear component catalog, active price records, tenders & panel estimations',
+    },
+    sld_studio: {
+      title: 'LV Switchgear Engineering & SLD Design Studio',
+      subtitle: 'IEC 61439-1/2 SLD auto-generation, 2D panel GA drawing, door facia mimic, ATS interlocking & customer BOQ',
+    },
+    bureau: {
+      title: 'Tender Bidding Bureau (Model A Production Portal)',
+      subtitle: 'Outsourced tendering service, contractor OEM discount agreements, multi-brand value engineering & copper risk simulator',
     },
     projects: {
       title: 'Tender Projects & RFQs',
@@ -77,38 +85,38 @@ export const Header: React.FC<HeaderProps> = ({
   const current = titles[currentView] || { title: 'LV Switchgear Estimator', subtitle: '' };
 
   return (
-    <header className="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between shrink-0">
+    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-xs">
       <div>
-        <h1 className="text-base font-bold text-slate-100 flex items-center gap-2">
+        <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
           {current.title}
         </h1>
-        <p className="text-xs text-slate-400 font-mono">{current.subtitle}</p>
+        <p className="text-xs text-slate-500 font-mono">{current.subtitle}</p>
       </div>
 
       <div className="flex items-center gap-2.5">
         {/* SQL Architecture shortcut */}
         <button
           onClick={onOpenArchitecture}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-800/80 rounded transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-md transition-colors"
           title="View SQL Server Scripts & EF Core Architecture"
         >
-          <Database className="w-3.5 h-3.5" />
+          <Database className="w-3.5 h-3.5 text-cyan-700" />
           <span>SQL Scripts</span>
         </button>
 
         {/* Quick Add Component */}
         <button
           onClick={onOpenAddComponent}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md transition-colors shadow-2xs"
         >
-          <Plus className="w-3.5 h-3.5 text-blue-400" />
+          <Plus className="w-3.5 h-3.5 text-blue-600" />
           <span>Add Component</span>
         </button>
 
         {/* Quick Revise Price */}
         <button
           onClick={onOpenAddPrice}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded transition-colors shadow-xs"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-md transition-colors shadow-2xs"
         >
           <DollarSign className="w-3.5 h-3.5" />
           <span>New Price Entry</span>
@@ -117,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* CSV Export */}
         <button
           onClick={onExportCSV}
-          className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded border border-slate-800 transition-colors"
+          className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors"
           title="Export Active View to CSV"
         >
           <Download className="w-4 h-4" />
@@ -126,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Reset Data */}
         <button
           onClick={onResetData}
-          className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded border border-slate-800 transition-colors"
+          className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors"
           title="Reset to Initial Seed Data"
         >
           <RefreshCw className="w-4 h-4" />

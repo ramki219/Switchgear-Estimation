@@ -97,15 +97,15 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
       subtitle="Select directly from the Phase 1 Component Master Catalog to pull live active buying prices"
       maxWidth="4xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
+      <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs text-slate-800">
         {/* Step 1: Catalog Component Search & Selection */}
-        <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-2">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-cyan-400 font-bold flex items-center gap-1.5">
-              <Cpu className="w-4 h-4" />
+            <span className="text-cyan-800 font-bold flex items-center gap-1.5">
+              <Cpu className="w-4 h-4 text-cyan-600" />
               <span>1. Choose from Master Component Catalog</span>
             </span>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500">
               {filteredComponents.length} components available with live pricing
             </span>
           </div>
@@ -118,14 +118,14 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
                 placeholder="Search part number, model, ACB, MCCB, rating (e.g. 1600A, 400A)..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded pl-8 pr-3 py-1.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-cyan-600"
               />
             </div>
 
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500"
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-cyan-600"
             >
               <option value="ALL">All Categories</option>
               <option value="AIR CIRCUIT BREAKER">Air Circuit Breakers (ACB)</option>
@@ -138,9 +138,9 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
           </div>
 
           {/* Quick Component Picker Table */}
-          <div className="max-h-48 overflow-y-auto border border-slate-800 rounded bg-slate-950 divide-y divide-slate-800/60">
+          <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg bg-white divide-y divide-slate-100 shadow-2xs">
             {filteredComponents.length === 0 ? (
-              <div className="p-4 text-center text-slate-500 text-[11px]">
+              <div className="p-4 text-center text-slate-400 text-[11px]">
                 No matching components found in master catalog.
               </div>
             ) : (
@@ -150,16 +150,16 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
                   <div
                     key={c.componentID}
                     onClick={() => handleSelectComponent(c)}
-                    className={`p-2 flex items-center justify-between cursor-pointer transition ${
+                    className={`p-2.5 flex items-center justify-between cursor-pointer transition ${
                       isSelected
-                        ? 'bg-cyan-950/60 border-l-2 border-cyan-400 text-cyan-200'
-                        : 'hover:bg-slate-900/80 text-slate-300'
+                        ? 'bg-cyan-50 border-l-4 border-cyan-600 text-cyan-900 font-semibold'
+                        : 'hover:bg-slate-50 text-slate-700'
                     }`}
                   >
                     <div className="flex-1 min-w-0 pr-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-100">{c.partNumber}</span>
-                        <span className="text-[11px] text-slate-400">({c.manufacturerName || c.manufacturerCode})</span>
+                        <span className="font-bold text-slate-900">{c.partNumber}</span>
+                        <span className="text-[11px] text-slate-500">({c.manufacturerName || c.manufacturerCode})</span>
                         {c.ratedCurrent && (
                           <Badge variant="blue" size="sm">{c.ratedCurrent}A</Badge>
                         )}
@@ -167,14 +167,14 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
                           <Badge variant="purple" size="sm">{c.breakingCapacity}kA</Badge>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate">{c.componentName}</p>
+                      <p className="text-[11px] text-slate-500 truncate mt-0.5">{c.componentName}</p>
                     </div>
 
                     <div className="text-right pl-2">
-                      <div className="text-cyan-400 font-bold">
+                      <div className="text-emerald-700 font-bold">
                         {c.currentPrice ? `${c.currentPrice.netPrice.toLocaleString()} AED` : 'Price on req.'}
                       </div>
-                      <div className="text-[10px] text-slate-500">
+                      <div className="text-[10px] text-slate-400">
                         {c.currentPrice?.supplierName || 'Distributor'}
                       </div>
                     </div>
@@ -186,27 +186,27 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
         </div>
 
         {/* Step 2: Feeder Details & Quantities */}
-        <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-3">
-          <div className="text-cyan-400 font-bold flex items-center gap-1.5">
-            <Tag className="w-4 h-4" />
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div className="text-cyan-800 font-bold flex items-center gap-1.5">
+            <Tag className="w-4 h-4 text-cyan-600" />
             <span>2. Circuit Tagging & Sizing in Panel</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Circuit Tag / Designation *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Circuit Tag / Designation *</label>
               <input
                 type="text"
                 required
                 value={circuitTag}
                 onChange={(e) => setCircuitTag(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 font-bold focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 font-bold focus:border-cyan-600 focus:outline-none"
                 placeholder="e.g. INCOMER-1, FEEDER-CHILLER"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Quantity *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Quantity *</label>
               <input
                 type="number"
                 min={1}
@@ -214,16 +214,16 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
                 required
                 value={quantity}
                 onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-cyan-400 font-bold focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-cyan-800 font-bold focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Unit</label>
+              <label className="block text-slate-700 font-semibold mb-1">Unit</label>
               <select
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value="NOS">NOS (Numbers)</option>
                 <option value="SET">SET</option>
@@ -234,73 +234,73 @@ export const AddFeederModal: React.FC<AddFeederModalProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Component Description *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Component Description *</label>
               <input
                 type="text"
                 required
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Part Number *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Part Number *</label>
               <input
                 type="text"
                 required
                 value={partNumber}
                 onChange={(e) => setPartNumber(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 font-mono focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 font-mono focus:border-cyan-600 focus:outline-none"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Rating / Capacity</label>
+              <label className="block text-slate-700 font-semibold mb-1">Rating / Capacity</label>
               <input
                 type="text"
                 value={rating}
                 onChange={(e) => setRating(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
                 placeholder="e.g. 630A / 36kA"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Unit Net Buying Cost (AED) *</label>
+              <label className="block text-slate-700 font-semibold mb-1">Unit Net Buying Cost (AED) *</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 value={unitCost}
                 onChange={(e) => setUnitCost(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-emerald-400 font-bold focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-emerald-700 font-bold focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Total Extended Cost</label>
-              <div className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-emerald-400 font-bold text-sm">
+              <label className="block text-slate-700 font-semibold mb-1">Total Extended Cost</label>
+              <div className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-emerald-700 font-bold text-sm">
                 {(quantity * unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} AED
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+        <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-semibold transition"
+            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg font-semibold transition shadow-2xs"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={!description || !partNumber}
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 font-bold rounded flex items-center gap-2 transition"
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-2 transition shadow-2xs"
           >
             <Plus className="w-4 h-4" />
             <span>Add Circuit Item</span>

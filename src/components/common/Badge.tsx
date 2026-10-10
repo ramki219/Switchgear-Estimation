@@ -26,18 +26,18 @@ export const Badge: React.FC<BadgeProps> = ({
   className = '',
 }) => {
   const variantStyles = {
-    default: 'bg-slate-800 text-slate-300 border-slate-700',
-    neutral: 'bg-slate-800/80 text-slate-300 border-slate-700',
-    success: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60',
-    emerald: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60',
-    warning: 'bg-amber-950/70 text-amber-300 border-amber-800/60',
-    amber: 'bg-orange-950/70 text-orange-300 border-orange-800/60',
-    danger: 'bg-rose-950/70 text-rose-300 border-rose-800/60',
-    info: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/60',
-    cyan: 'bg-cyan-950/70 text-cyan-300 border-cyan-800/60',
-    blue: 'bg-blue-950/70 text-blue-300 border-blue-800/60',
-    purple: 'bg-indigo-950/70 text-indigo-300 border-indigo-800/60',
-    teal: 'bg-teal-950/70 text-teal-300 border-teal-800/60',
+    default: 'bg-slate-100 text-slate-700 border-slate-200',
+    neutral: 'bg-slate-100 text-slate-600 border-slate-200',
+    success: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    warning: 'bg-amber-50 text-amber-800 border-amber-200',
+    amber: 'bg-amber-50 text-amber-800 border-amber-200',
+    danger: 'bg-rose-50 text-rose-700 border-rose-200',
+    info: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    cyan: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    blue: 'bg-blue-50 text-blue-800 border-blue-200',
+    purple: 'bg-purple-50 text-purple-800 border-purple-200',
+    teal: 'bg-teal-50 text-teal-800 border-teal-200',
   };
 
   const sizeStyles = {
@@ -47,7 +47,7 @@ export const Badge: React.FC<BadgeProps> = ({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border tracking-tight font-mono ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex items-center gap-1 rounded-md border tracking-tight font-mono ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
     >
       {children}
     </span>

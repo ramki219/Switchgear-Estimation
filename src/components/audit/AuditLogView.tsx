@@ -10,20 +10,20 @@ interface AuditLogViewProps {
 export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
   return (
     <div className="space-y-4">
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
-        <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-          <History className="w-4 h-4 text-purple-400" />
+      <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs">
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+          <History className="w-4 h-4 text-purple-600" />
           <span>System Audit Log & Traceability Trail</span>
         </h3>
-        <p className="text-xs text-slate-400 font-mono mt-0.5">
-          Immutable historical audit records from SQL Server schema <code className="text-cyan-400 font-mono">audit.AuditLog</code>
+        <p className="text-xs text-slate-500 font-mono mt-0.5">
+          Immutable historical audit records from SQL Server schema <code className="text-cyan-700 font-mono">audit.AuditLog</code>
         </p>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
         <table className="w-full text-left text-xs border-collapse font-mono">
           <thead>
-            <tr className="border-b border-slate-800 text-[11px] text-slate-400 uppercase bg-slate-950/60">
+            <tr className="border-b border-slate-200 text-[11px] text-slate-600 uppercase bg-slate-50">
               <th className="py-3 px-4">Audit ID</th>
               <th className="py-3 px-4">Timestamp</th>
               <th className="py-3 px-4">User</th>
@@ -33,22 +33,22 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
               <th className="py-3 px-4">New Value (Updated State)</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y divide-slate-100">
             {logs.map((log) => (
-              <tr key={log.auditID} className="hover:bg-slate-800/40 transition-colors">
-                <td className="py-3 px-4 text-slate-400">
+              <tr key={log.auditID} className="hover:bg-slate-50/70 transition-colors">
+                <td className="py-3 px-4 text-slate-500">
                   #{log.auditID}
                 </td>
-                <td className="py-3 px-4 text-slate-300">
+                <td className="py-3 px-4 text-slate-700">
                   {new Date(log.createdAt).toLocaleString()}
                 </td>
-                <td className="py-3 px-4 text-slate-200">
+                <td className="py-3 px-4 text-slate-800">
                   <span className="flex items-center gap-1">
-                    <User className="w-3 h-3 text-slate-500" />
+                    <User className="w-3 h-3 text-slate-400" />
                     <span>{log.userID}</span>
                   </span>
                 </td>
-                <td className="py-3 px-4 text-cyan-400 font-semibold">
+                <td className="py-3 px-4 text-cyan-800 font-semibold">
                   {log.tableName} (ID: {log.recordID})
                 </td>
                 <td className="py-3 px-4">
@@ -62,10 +62,10 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs }) => {
                     {log.action}
                   </Badge>
                 </td>
-                <td className="py-3 px-4 text-slate-400 max-w-xs truncate text-[11px]">
+                <td className="py-3 px-4 text-slate-500 max-w-xs truncate text-[11px]">
                   {log.oldValue || '-'}
                 </td>
-                <td className="py-3 px-4 text-emerald-300 max-w-sm truncate text-[11px]">
+                <td className="py-3 px-4 text-emerald-700 font-medium max-w-sm truncate text-[11px]">
                   {log.newValue || '-'}
                 </td>
               </tr>

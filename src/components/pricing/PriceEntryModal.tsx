@@ -80,14 +80,14 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition shadow-2xs"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            className="px-4 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded transition-colors shadow-xs"
+            className="px-4 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition shadow-2xs"
           >
             Commit Price Revision
           </button>
@@ -96,9 +96,9 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Engineering Notice */}
-        <div className="bg-slate-950 p-3 rounded-lg border border-cyan-900/60 flex items-start gap-2.5">
-          <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-          <div className="text-xs font-mono text-cyan-300 leading-relaxed">
+        <div className="bg-cyan-50/70 p-3.5 rounded-xl border border-cyan-200 flex items-start gap-2.5">
+          <ShieldAlert className="w-4 h-4 text-cyan-700 shrink-0 mt-0.5" />
+          <div className="text-xs font-mono text-cyan-900 leading-relaxed">
             <strong>Historical Engine Rule:</strong> Committing this record will automatically archive any prior active price for this component & supplier (updating its valid-until date), ensuring previous switchboard estimates maintain their exact historical BOM costing.
           </div>
         </div>
@@ -106,7 +106,7 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
         {/* Component Selector */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono text-slate-700 font-semibold mb-1">
               Select Component *
             </label>
             <select
@@ -117,7 +117,7 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
                 const c = components.find(x => x.componentID === id);
                 if (c) setSupplierPartNumber(c.partNumber);
               }}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 font-mono focus:border-cyan-500"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-cyan-600 focus:outline-none"
             >
               {components.map((c) => (
                 <option key={c.componentID} value={c.componentID}>
@@ -126,20 +126,20 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
               ))}
             </select>
             {selectedComp && (
-              <span className="text-[11px] text-slate-400 font-mono mt-1 block">
+              <span className="text-[11px] text-slate-500 font-mono mt-1 block">
                 OEM: {selectedComp.manufacturerName} • Rating: {selectedComp.ratedCurrent}A / {selectedComp.breakingCapacity}kA
               </span>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono text-slate-700 font-semibold mb-1">
               Supplier / Vendor *
             </label>
             <select
               value={supplierID}
               onChange={(e) => setSupplierID(Number(e.target.value))}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 focus:border-cyan-500"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:border-cyan-600 focus:outline-none"
             >
               {suppliers.map((s) => (
                 <option key={s.supplierID} value={s.supplierID}>
@@ -151,21 +151,21 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
         </div>
 
         {/* Price & Calculation */}
-        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 space-y-3">
-          <div className="text-xs font-mono font-semibold text-slate-300 uppercase flex items-center justify-between">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div className="text-xs font-mono font-semibold text-slate-700 uppercase flex items-center justify-between">
             <span>Commercial Cost Parameters</span>
-            <span className="text-emerald-400 font-mono font-bold text-sm">
+            <span className="text-emerald-700 font-mono font-bold text-sm">
               Net Price: {currency} {netPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Currency</label>
+              <label className="block text-[11px] text-slate-600 mb-1">Currency</label>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900"
               >
                 <option value="AED">AED (UAE Dirham)</option>
                 <option value="USD">USD (US Dollar)</option>
@@ -176,34 +176,34 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">List Price *</label>
+              <label className="block text-[11px] text-slate-600 mb-1">List Price *</label>
               <input
                 type="number"
                 step="any"
                 value={listPrice}
                 onChange={(e) => setListPrice(Math.max(0, Number(e.target.value)))}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 font-bold focus:border-cyan-500"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Discount %</label>
+              <label className="block text-[11px] text-slate-600 mb-1">Discount %</label>
               <input
                 type="number"
                 step="any"
                 value={discountPercent}
                 onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-amber-400 font-bold focus:border-cyan-500"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-amber-700 font-bold focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Min Order Qty</label>
+              <label className="block text-[11px] text-slate-600 mb-1">Min Order Qty</label>
               <input
                 type="number"
                 value={minimumQuantity}
                 onChange={(e) => setMinimumQuantity(Math.max(1, Number(e.target.value)))}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
           </div>
@@ -212,50 +212,50 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
         {/* Commercial Terms & References */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Price Effective Date *</label>
+            <label className="block text-[11px] text-slate-600 mb-1">Price Effective Date *</label>
             <input
               type="date"
               value={priceDate}
               onChange={(e) => setPriceDate(e.target.value)}
-              className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-slate-100"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-600 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Valid Until</label>
+            <label className="block text-[11px] text-slate-600 mb-1">Valid Until</label>
             <input
               type="date"
               value={validUntil}
               onChange={(e) => setValidUntil(e.target.value)}
-              className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-slate-100"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-600 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Lead Time (Days)</label>
+            <label className="block text-[11px] text-slate-600 mb-1">Lead Time (Days)</label>
             <input
               type="number"
               value={leadTimeDays}
               onChange={(e) => setLeadTimeDays(Number(e.target.value))}
-              className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-slate-100"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-600 focus:outline-none"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">Quotation Ref #</label>
+            <label className="block text-[11px] text-slate-600 mb-1">Quotation Ref #</label>
             <input
               type="text"
               placeholder="e.g. QT-DAN-2026-902"
               value={quotationReference}
               onChange={(e) => setQuotationReference(e.target.value)}
-              className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-slate-100 uppercase"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 uppercase focus:border-cyan-600 focus:outline-none"
             />
           </div>
         </div>
 
         {/* Notes */}
         <div>
-          <label className="block text-xs font-mono text-slate-300 mb-1">
+          <label className="block text-xs font-mono text-slate-700 font-semibold mb-1">
             Commercial Notes / Price Revision Reason
           </label>
           <input
@@ -263,7 +263,7 @@ export const PriceEntryModal: React.FC<PriceEntryModalProps> = ({
             placeholder="e.g. Annual contract agreement, copper surcharge adjustment, promotional rate"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 font-mono focus:border-cyan-500"
+            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-cyan-600 focus:outline-none"
           />
         </div>
       </form>

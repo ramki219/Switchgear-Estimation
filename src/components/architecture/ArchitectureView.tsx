@@ -406,20 +406,20 @@ git push -u origin main
   return (
     <div className="space-y-4">
       {/* Top Banner */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex items-center justify-between">
+      <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-xs">
         <div>
-          <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-            <Server className="w-4 h-4 text-cyan-400" />
+          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <Server className="w-4 h-4 text-cyan-600" />
             <span>SQL Server & C# Backend Architecture Explorer</span>
           </h3>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
+          <p className="text-xs text-slate-500 font-mono mt-0.5">
             Phase 1 Database DDL, EF Core DbContext, Stored Procedures & Connection Specs
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => downloadSQLScript(currentScript.filename, currentScript.code)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-mono font-medium transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-mono font-medium transition-colors shadow-2xs"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download {currentScript.filename}</span>
@@ -428,67 +428,67 @@ git push -u origin main
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 overflow-x-auto text-xs font-mono">
+      <div className="flex items-center gap-1.5 bg-white p-2 rounded-xl border border-slate-200 overflow-x-auto text-xs font-mono shadow-xs">
         <button
           onClick={() => setActiveTab('001')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === '001' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === '001' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           001_Database.sql
         </button>
         <button
           onClick={() => setActiveTab('002')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === '002' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === '002' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           002_MasterData.sql
         </button>
         <button
           onClick={() => setActiveTab('003')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === '003' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === '003' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           003_Pricing.sql
         </button>
         <button
           onClick={() => setActiveTab('004')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === '004' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === '004' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           004_Procedures.sql
         </button>
         <button
           onClick={() => setActiveTab('005')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === '005' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === '005' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           005_SeedData.sql
         </button>
         <button
           onClick={() => setActiveTab('efcore')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === 'efcore' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === 'efcore' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           EF Core DbContext
         </button>
         <button
           onClick={() => setActiveTab('api')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === 'api' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === 'api' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           REST API Controllers
         </button>
         <button
           onClick={() => setActiveTab('setup')}
-          className={`px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
-            activeTab === 'setup' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-400 hover:text-slate-200'
+          className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium ${
+            activeTab === 'setup' ? 'bg-cyan-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           Setup & Deployment
@@ -496,28 +496,28 @@ git push -u origin main
       </div>
 
       {/* Code Viewer */}
-      <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
           <div>
-            <div className="font-mono text-xs font-semibold text-slate-200 flex items-center gap-2">
-              <FileCode className="w-4 h-4 text-cyan-400" />
+            <div className="font-mono text-xs font-semibold text-slate-800 flex items-center gap-2">
+              <FileCode className="w-4 h-4 text-cyan-600" />
               <span>{currentScript.title}</span>
             </div>
-            <p className="text-[11px] text-slate-400 font-mono mt-0.5">{currentScript.description}</p>
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5">{currentScript.description}</p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => copyToClipboard(currentScript.code, activeTab)}
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-md transition-colors shadow-2xs"
             >
-              {copied === activeTab ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied === activeTab ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied === activeTab ? 'Copied!' : 'Copy Code'}</span>
             </button>
           </div>
         </div>
 
-        <div className="p-4 overflow-x-auto max-h-[600px] text-xs font-mono text-slate-300 bg-slate-950 leading-relaxed selection:bg-cyan-900 selection:text-cyan-100">
+        <div className="p-4 overflow-x-auto max-h-[600px] text-xs font-mono text-slate-800 bg-slate-50/50 leading-relaxed border-t border-slate-100 selection:bg-cyan-100 selection:text-cyan-900">
           <pre>{currentScript.code}</pre>
         </div>
       </div>

@@ -104,6 +104,7 @@ export interface PanelType {
   description?: string;
   defaultFormOfSeparation: string;
   defaultIPRating: string;
+  complianceTag?: string;
   isActive: boolean;
 }
 
@@ -124,7 +125,7 @@ export interface AuditLogEntry {
   userID: string;
   tableName: string;
   recordID: string;
-  action: 'INSERT_PRICE' | 'PRICE_REVISION' | 'CREATE_COMPONENT' | 'UPDATE_COMPONENT' | 'DELETE_COMPONENT' | 'CREATE_SUPPLIER' | 'UPDATE_SUPPLIER' | 'CREATE_MANUFACTURER';
+  action: 'INSERT_PRICE' | 'PRICE_REVISION' | 'CREATE_COMPONENT' | 'UPDATE_COMPONENT' | 'DELETE_COMPONENT' | 'CREATE_SUPPLIER' | 'UPDATE_SUPPLIER' | 'CREATE_MANUFACTURER' | 'CREATE_CATEGORY' | 'BULK_IMPORT_COMPONENTS';
   oldValue?: string;
   newValue?: string;
   createdAt: string;
@@ -153,10 +154,12 @@ export interface Project {
   projectCode: string;
   projectName: string;
   clientName: string;
+  clientID?: number;
   consultantName?: string;
   location: string;
   authority: string; // DEWA, SEWA, FEWA, Kahramaa, ADDC, IEC Standard
   status: ProjectStatus;
+  tenderStage?: 'INTAKE' | 'SLD_REVIEW' | 'ENGINEERING' | 'COMMERCIAL_REVIEW' | 'SUBMITTED' | 'AWARDED' | 'LOST';
   createdDate: string;
   dueDate: string;
   currency: string;
@@ -165,6 +168,9 @@ export interface Project {
   panelsCount?: number;
   totalCost?: number;
   sellingPrice?: number;
+  targetMarginPercent?: number;
+  primaryOEM?: string;
+  copperRatePerKg?: number;
 }
 
 export type CableEntryType = 'TOP' | 'BOTTOM' | 'BOTH';
@@ -286,3 +292,91 @@ export interface ConsolidatedBOMItem {
   extendedCost: number;
   usedInPanels: string[];
 }
+
+export interface ImportedComponentRow {
+  componentCode?: string;
+  partNumber: string;
+  componentName: string;
+  categoryName: string;
+  manufacturerName: string;
+  model?: string;
+  description?: string;
+  unit?: string;
+  ratedCurrent?: number;
+  ratedVoltage?: number;
+  poles?: number;
+  breakingCapacity?: number;
+  ipRating?: string;
+  mountingType?: string;
+  iecStandard?: string;
+  frequency?: number;
+  // Optional initial pricing
+  supplierName?: string;
+  currency?: string;
+  listPrice?: number;
+  discountPercent?: number;
+  quotationReference?: string;
+}
+
+export interface BulkImportOptions {
+  updateExisting: boolean;
+  autoCreateCategory: boolean;
+  autoCreateManufacturer: boolean;
+  autoCreateSupplier: boolean;
+  importPricing: boolean;
+}
+
+export interface BulkImportResult {
+  totalProcessed: number;
+  createdCount: number;
+  updatedCount: number;
+  pricesAddedCount: number;
+  categoriesCreatedCount: number;
+  manufacturersCreatedCount: number;
+  errors: string[];
+}
+
+export interface OEMDiscountProfile {
+  manufacturerCode: string;
+  manufacturerName: string;
+  standardDiscountPercent: number;
+}
+
+export interface BureauClient {
+  clientID: number;
+  clientCode: string;
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  authority: string;
+  defaultPaymentTerms: string;
+  defaultWarrantyMonths: number;
+  defaultDeliveryWeeks: number;
+  targetMarginPercent: number;
+  defaultOverheadPercent: number;
+  oemDiscounts: OEMDiscountProfile[];
+  notes?: string;
+  activeTendersCount?: number;
+  totalWonTendersValue?: number;
+}
+
+export interface ValueEngineeringOption {
+  oemCode: string;
+  oemName: string;
+  equipmentCost: number;
+  copperCost: number;
+  enclosureCost: number;
+  labourCost: number;
+  totalDirectCost: number;
+  overheadAmount: number;
+  profitAmount: number;
+  sellingPrice: number;
+  leadTimeWeeks: number;
+  technicalComplianceRating: number; // e.g. 98%
+  complianceNotes: string;
+}
+
+export * from './engineering';
+

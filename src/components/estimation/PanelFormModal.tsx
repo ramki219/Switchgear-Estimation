@@ -147,15 +147,15 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
       subtitle="Configure electrical ratings, form of internal separation, dimensions and copper busbar current density"
       maxWidth="3xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs">
+      <form onSubmit={handleSubmit} className="space-y-4 font-mono text-xs text-slate-800">
         {/* Panel Classification */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-slate-400 mb-1">Panel Category *</label>
+            <label className="block text-slate-700 font-semibold mb-1">Panel Category *</label>
             <select
               value={panelTypeCode}
               onChange={(e) => handleTypeChange(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 font-semibold focus:border-cyan-500 focus:outline-none"
+              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-semibold focus:border-cyan-600 focus:outline-none"
             >
               <option value="MDB">MDB - Main Distribution Board</option>
               <option value="SMDB">SMDB - Sub-Main Distribution Board</option>
@@ -167,23 +167,23 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Panel Tag / Label *</label>
+            <label className="block text-slate-700 font-semibold mb-1">Panel Tag / Label *</label>
             <input
               type="text"
               required
               value={panelTag}
               onChange={(e) => setPanelTag(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 font-bold focus:border-cyan-500 focus:outline-none"
+              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:border-cyan-600 focus:outline-none"
               placeholder="e.g. MDB-01"
             />
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Incomer Rating (Amperes) *</label>
+            <label className="block text-slate-700 font-semibold mb-1">Incomer Rating (Amperes) *</label>
             <select
               value={incomerRating}
               onChange={(e) => setIncomerRating(Number(e.target.value))}
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-cyan-400 font-bold focus:border-cyan-500 focus:outline-none"
+              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-cyan-800 font-bold focus:border-cyan-600 focus:outline-none"
             >
               <option value={100}>100A</option>
               <option value={160}>160A</option>
@@ -203,31 +203,31 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
         </div>
 
         <div>
-          <label className="block text-slate-400 mb-1">Panel Engineering Description *</label>
+          <label className="block text-slate-700 font-semibold mb-1">Panel Engineering Description *</label>
           <input
             type="text"
             required
             value={panelName}
             onChange={(e) => setPanelName(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100 focus:border-cyan-500 focus:outline-none"
+            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:border-cyan-600 focus:outline-none"
             placeholder="e.g. Main Distribution Board 2500A 415V Form 4b Type 6 IP42"
           />
         </div>
 
         {/* Technical Ratings */}
-        <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-3">
-          <div className="flex items-center gap-2 text-cyan-400 font-bold border-b border-slate-800 pb-1">
-            <Cpu className="w-4 h-4" />
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div className="flex items-center gap-2 text-cyan-800 font-bold border-b border-slate-200 pb-2">
+            <Cpu className="w-4 h-4 text-cyan-600" />
             <span>IEC 61439 Technical Ratings</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Short Circuit Icu/Icw *</label>
+              <label className="block text-slate-600 mb-1">Short Circuit Icu/Icw *</label>
               <select
                 value={shortCircuitRating}
                 onChange={(e) => setShortCircuitRating(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value={25}>25 kA / 1s</option>
                 <option value={36}>36 kA / 1s</option>
@@ -239,11 +239,11 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Internal Separation *</label>
+              <label className="block text-slate-600 mb-1">Internal Separation *</label>
               <select
                 value={formOfSeparation}
                 onChange={(e) => setFormOfSeparation(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value="Form 1">Form 1 (No separation)</option>
                 <option value="Form 2b">Form 2b (Busbar isolated)</option>
@@ -255,11 +255,11 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Ingress Protection *</label>
+              <label className="block text-slate-600 mb-1">Ingress Protection *</label>
               <select
                 value={ipRating}
                 onChange={(e) => setIpRating(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value="IP31">IP31 (Standard indoor)</option>
                 <option value="IP42">IP42 (DEWA standard indoor)</option>
@@ -270,11 +270,11 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Cable Entry *</label>
+              <label className="block text-slate-600 mb-1">Cable Entry *</label>
               <select
                 value={cableEntry}
                 onChange={(e) => setCableEntry(e.target.value as CableEntryType)}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value="BOTTOM">Bottom Cable Entry</option>
                 <option value="TOP">Top Cable Entry</option>
@@ -285,61 +285,61 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
         </div>
 
         {/* Physical Enclosure & Busbar Sizing Parameters */}
-        <div className="bg-slate-900 p-3 rounded border border-slate-800 space-y-3">
-          <div className="flex items-center gap-2 text-amber-400 font-bold border-b border-slate-800 pb-1">
-            <Ruler className="w-4 h-4" />
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div className="flex items-center gap-2 text-amber-800 font-bold border-b border-slate-200 pb-2">
+            <Ruler className="w-4 h-4 text-amber-600" />
             <span>Dimensions & Busbar Parameters</span>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div>
-              <label className="block text-slate-400 mb-1">Height (mm)</label>
+              <label className="block text-slate-600 mb-1">Height (mm)</label>
               <input
                 type="number"
                 value={enclosureHeight}
                 onChange={(e) => setEnclosureHeight(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Width (mm)</label>
+              <label className="block text-slate-600 mb-1">Width (mm)</label>
               <input
                 type="number"
                 value={enclosureWidth}
                 onChange={(e) => setEnclosureWidth(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Depth (mm)</label>
+              <label className="block text-slate-600 mb-1">Depth (mm)</label>
               <input
                 type="number"
                 value={enclosureDepth}
                 onChange={(e) => setEnclosureDepth(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Columns / Tiers</label>
+              <label className="block text-slate-600 mb-1">Columns / Tiers</label>
               <input
                 type="number"
                 min={1}
                 max={12}
                 value={numberOfColumns}
                 onChange={(e) => setNumberOfColumns(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1">Current Density</label>
+              <label className="block text-slate-600 mb-1">Current Density</label>
               <select
                 value={busbarCurrentDensity}
                 onChange={(e) => setBusbarCurrentDensity(Number(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-slate-100 focus:border-cyan-500 focus:outline-none"
+                className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-900 focus:border-cyan-600 focus:outline-none"
               >
                 <option value={1.2}>1.2 A/mm² (50°C high ambient)</option>
                 <option value={1.5}>1.5 A/mm² (DEWA/IEC std)</option>
@@ -349,17 +349,17 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+        <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-semibold transition"
+            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg font-semibold transition shadow-2xs"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold rounded flex items-center gap-2 transition"
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-lg flex items-center gap-2 transition shadow-2xs"
           >
             <Save className="w-4 h-4" />
             <span>{panelToEdit ? 'Save Panel' : 'Add Panel to Estimate'}</span>

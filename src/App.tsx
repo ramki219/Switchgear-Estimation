@@ -19,7 +19,8 @@ import {
   Project,
   EstimatePanel,
   Quotation,
-  ConsolidatedBOMItem
+  ConsolidatedBOMItem,
+  BulkImportResult
 } from './types';
 
 // Layout
@@ -32,6 +33,7 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { ComponentsView } from './components/components/ComponentsView';
 import { ComponentDetailModal } from './components/components/ComponentDetailModal';
 import { ComponentFormModal } from './components/components/ComponentFormModal';
+import { ComponentImportModal } from './components/components/ComponentImportModal';
 import { PricingView } from './components/pricing/PricingView';
 import { PriceHistoryModal } from './components/pricing/PriceHistoryModal';
 import { PriceEntryModal } from './components/pricing/PriceEntryModal';
@@ -48,6 +50,8 @@ import { EstimationWorkspaceView } from './components/estimation/EstimationWorks
 import { BOMView } from './components/estimation/BOMView';
 import { QuotationsView } from './components/estimation/QuotationsView';
 import { ProjectFormModal } from './components/estimation/ProjectFormModal';
+import { BureauHubView } from './components/bureau/BureauHubView';
+import { SLDStudioView } from './components/engineering/SLDStudioView';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<NavView>('dashboard');
@@ -72,6 +76,8 @@ export default function App() {
 
   // Phase 2 States
   const [projects, setProjects] = useState<Project[]>([]);
+  const [allPanels, setAllPanels] = useState<EstimatePanel[]>([]);
+  const [allQuotations, setAllQuotations] = useState<Quotation[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activePanels, setActivePanels] = useState<EstimatePanel[]>([]);
   const [activeQuotation, setActiveQuotation] = useState<Quotation | undefined>(undefined);
@@ -86,6 +92,7 @@ export default function App() {
   const [selectedComponentForDetail, setSelectedComponentForDetail] = useState<Component | null>(null);
   const [isComponentFormOpen, setIsComponentFormOpen] = useState(false);
   const [componentToEdit, setComponentToEdit] = useState<Component | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   
   const [isPriceEntryOpen, setIsPriceEntryOpen] = useState(false);
   const [preselectedComponentForPrice, setPreselectedComponentForPrice] = useState<Component | null>(null);
@@ -110,6 +117,8 @@ export default function App() {
 
     const loadedProjects = storageService.getProjects();
     setProjects(loadedProjects);
+    setAllPanels(storageService.getPanels());
+    setAllQuotations(storageService.getQuotations());
 
     // If there's an active project, refresh its panels & state
     setActiveProject(prev => {
@@ -288,7 +297,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* Sidebar Navigation */}
       <Sidebar
         currentView={currentView}
@@ -314,7 +323,7 @@ export default function App() {
         />
 
         {/* View Router */}
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-950">
+        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
           {currentView === 'dashboard' && (
             <DashboardView
               metrics={metrics}
@@ -328,12 +337,35 @@ export default function App() {
             />
           )}
 
+          {currentView === 'sld_studio' && (
+            <SLDStudioView
+              catalogComponents={components}
+              project={activeProject || undefined}
+              onNavigateToCosting={() => setCurrentView('quotations')}
+            />
+          )}
+
+          {currentView === 'bureau' && (
+            <BureauHubView
+              projects={projects}
+              panels={allPanels}
+              quotations={allQuotations}
+              manufacturers={manufacturers}
+              onOpenProject={handleSelectProjectForEstimation}
+              onRefreshData={loadData}
+            />
+          )}
+
           {currentView === 'projects' && (
             <ProjectsView
               projects={projects}
               onSelectProjectForEstimation={handleSelectProjectForEstimation}
               onSelectProjectForQuotation={handleSelectProjectForQuotation}
               onSelectProjectForBOM={handleSelectProjectForBOM}
+              onSelectProjectForSLD={(p) => {
+                setActiveProject(p);
+                setCurrentView('sld_studio');
+              }}
               onOpenNewProject={() => {
                 setProjectToEdit(null);
                 setIsProjectModalOpen(true);
@@ -356,6 +388,7 @@ export default function App() {
                 onBackToProjects={() => setCurrentView('projects')}
                 onNavigateToQuotation={handleSelectProjectForQuotation}
                 onNavigateToBOM={handleSelectProjectForBOM}
+                onNavigateToSLD={() => setCurrentView('sld_studio')}
                 onAddPanel={handleAddPanel}
                 onUpdatePanel={handleUpdatePanel}
                 onDeletePanel={handleDeletePanel}
@@ -363,12 +396,12 @@ export default function App() {
                 onDeleteItemFromPanel={handleDeleteItemFromPanel}
               />
             ) : (
-              <div className="bg-slate-900 border border-slate-800 p-8 rounded text-center text-slate-400 font-mono">
+              <div className="bg-white border border-slate-200 p-8 rounded-xl text-center text-slate-600 font-mono shadow-xs">
                 Please select or create a project first to open the Panel Sizing Engine.
                 <div className="mt-4">
                   <button
                     onClick={() => setCurrentView('projects')}
-                    className="px-4 py-2 bg-cyan-600 text-slate-950 font-bold rounded"
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg shadow-xs transition-colors"
                   >
                     Go to Projects
                   </button>
@@ -386,12 +419,12 @@ export default function App() {
                 onNavigateToQuotation={() => setCurrentView('quotations')}
               />
             ) : (
-              <div className="bg-slate-900 border border-slate-800 p-8 rounded text-center text-slate-400 font-mono">
+              <div className="bg-white border border-slate-200 p-8 rounded-xl text-center text-slate-600 font-mono shadow-xs">
                 Please select a project to view its consolidated Bill of Materials.
                 <div className="mt-4">
                   <button
                     onClick={() => setCurrentView('projects')}
-                    className="px-4 py-2 bg-cyan-600 text-slate-950 font-bold rounded"
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg shadow-xs transition-colors"
                   >
                     Go to Projects
                   </button>
@@ -410,12 +443,12 @@ export default function App() {
                 onSaveQuotation={handleSaveQuotation}
               />
             ) : (
-              <div className="bg-slate-900 border border-slate-800 p-8 rounded text-center text-slate-400 font-mono">
+              <div className="bg-white border border-slate-200 p-8 rounded-xl text-center text-slate-600 font-mono shadow-xs">
                 Please select a project to generate commercial quotations.
                 <div className="mt-4">
                   <button
                     onClick={() => setCurrentView('projects')}
-                    className="px-4 py-2 bg-cyan-600 text-slate-950 font-bold rounded"
+                    className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded-lg shadow-xs transition-colors"
                   >
                     Go to Projects
                   </button>
@@ -442,6 +475,7 @@ export default function App() {
               onOpenPriceHistory={handleOpenPriceHistory}
               onOpenRevisePrice={handleOpenRevisePrice}
               onExportCSV={handleExportCSV}
+              onOpenImport={() => setIsImportModalOpen(true)}
             />
           )}
 
@@ -514,6 +548,19 @@ export default function App() {
         componentToEdit={componentToEdit}
         categories={categories}
         manufacturers={manufacturers}
+      />
+
+      {/* Excel / CSV Master Components Bulk Import Modal */}
+      <ComponentImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        categories={categories}
+        manufacturers={manufacturers}
+        suppliers={suppliers}
+        existingComponents={components}
+        onImportSuccess={() => {
+          loadData();
+        }}
       />
 
       {/* Project Form (Add / Edit) Modal */}

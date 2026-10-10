@@ -151,14 +151,14 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition shadow-2xs"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            className="px-4 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded transition-colors shadow-xs"
+            className="px-4 py-1.5 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg transition shadow-2xs"
           >
             {componentToEdit ? 'Save Changes' : 'Create Component'}
           </button>
@@ -169,24 +169,24 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
         {/* Row 1: Identification */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Component Code *
             </label>
             <input
               type="text"
               value={formData.componentCode}
               onChange={(e) => setFormData({ ...formData, componentCode: e.target.value })}
-              className={`w-full px-3 py-1.5 bg-slate-950 border rounded text-xs text-slate-100 font-mono focus:outline-none ${
-                errors.componentCode ? 'border-rose-500' : 'border-slate-700 focus:border-cyan-500'
+              className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20 ${
+                errors.componentCode ? 'border-rose-400' : 'border-slate-300 focus:border-cyan-500'
               }`}
             />
             {errors.componentCode && (
-              <span className="text-[10px] text-rose-400 mt-0.5 block">{errors.componentCode}</span>
+              <span className="text-[10px] text-rose-500 mt-0.5 block font-medium">{errors.componentCode}</span>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Manufacturer Part Number *
             </label>
             <input
@@ -194,17 +194,17 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               placeholder="e.g. 1SDA071018R1, LV848150"
               value={formData.partNumber}
               onChange={(e) => setFormData({ ...formData, partNumber: e.target.value })}
-              className={`w-full px-3 py-1.5 bg-slate-950 border rounded text-xs text-slate-100 font-mono focus:outline-none ${
-                errors.partNumber ? 'border-rose-500' : 'border-slate-700 focus:border-cyan-500'
+              className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/20 ${
+                errors.partNumber ? 'border-rose-400' : 'border-slate-300 focus:border-cyan-500'
               }`}
             />
             {errors.partNumber && (
-              <span className="text-[10px] text-rose-400 mt-0.5 block">{errors.partNumber}</span>
+              <span className="text-[10px] text-rose-500 mt-0.5 block font-medium">{errors.partNumber}</span>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Model Series
             </label>
             <input
@@ -212,7 +212,7 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               placeholder="e.g. Emax 2 E2.2N, ComPact NSX"
               value={formData.model}
               onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 font-mono focus:outline-none focus:border-cyan-500"
+              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
             />
           </div>
         </div>
@@ -220,13 +220,13 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
         {/* Row 2: Name & Hierarchy */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1">
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Manufacturer (OEM) *
             </label>
             <select
               value={formData.manufacturerID}
               onChange={(e) => setFormData({ ...formData, manufacturerID: Number(e.target.value) })}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
+              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
             >
               {manufacturers.map((m) => (
                 <option key={m.manufacturerID} value={m.manufacturerID}>
@@ -237,13 +237,13 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
           </div>
 
           <div className="md:col-span-1">
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Category *
             </label>
             <select
               value={formData.categoryID}
               onChange={(e) => setFormData({ ...formData, categoryID: Number(e.target.value) })}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
+              className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
             >
               {categories.map((c) => (
                 <option key={c.categoryID} value={c.categoryID}>
@@ -254,7 +254,7 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
           </div>
 
           <div className="md:col-span-1">
-            <label className="block text-xs font-mono text-slate-300 mb-1">
+            <label className="block text-xs font-mono font-medium text-slate-700 mb-1">
               Component Name *
             </label>
             <input
@@ -262,45 +262,45 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               placeholder="Full engineering description"
               value={formData.componentName}
               onChange={(e) => setFormData({ ...formData, componentName: e.target.value })}
-              className={`w-full px-3 py-1.5 bg-slate-950 border rounded text-xs text-slate-100 focus:outline-none ${
-                errors.componentName ? 'border-rose-500' : 'border-slate-700 focus:border-cyan-500'
+              className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 ${
+                errors.componentName ? 'border-rose-400' : 'border-slate-300 focus:border-cyan-500'
               }`}
             />
           </div>
         </div>
 
         {/* Row 3: Electrical Specs */}
-        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 space-y-3">
-          <div className="text-xs font-mono font-semibold text-slate-300 uppercase">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+          <div className="text-xs font-mono font-bold text-slate-800 uppercase tracking-wider">
             Electrical & Physical Ratings
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Rated Current (A)</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Rated Current (A)</label>
               <input
                 type="number"
                 step="any"
                 value={formData.ratedCurrent}
                 onChange={(e) => setFormData({ ...formData, ratedCurrent: Number(e.target.value) })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Breaking Cap (kA)</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Breaking Cap (kA)</label>
               <input
                 type="number"
                 step="any"
                 value={formData.breakingCapacity}
                 onChange={(e) => setFormData({ ...formData, breakingCapacity: Number(e.target.value) })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Poles</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Poles</label>
               <select
                 value={formData.poles}
                 onChange={(e) => setFormData({ ...formData, poles: Number(e.target.value) })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               >
                 <option value={1}>1 Pole (1P)</option>
                 <option value={2}>2 Poles (2P)</option>
@@ -309,21 +309,21 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Rated Voltage (V)</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Rated Voltage (V)</label>
               <input
                 type="number"
                 value={formData.ratedVoltage}
                 onChange={(e) => setFormData({ ...formData, ratedVoltage: Number(e.target.value) })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Mounting</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Mounting</label>
               <select
                 value={formData.mountingType}
                 onChange={(e) => setFormData({ ...formData, mountingType: e.target.value })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               >
                 <option value="Fixed">Fixed</option>
                 <option value="Drawout">Drawout with Chassis</option>
@@ -334,11 +334,11 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">IP Rating</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">IP Rating</label>
               <select
                 value={formData.ipRating}
                 onChange={(e) => setFormData({ ...formData, ipRating: e.target.value })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               >
                 <option value="IP00">IP00 (Open)</option>
                 <option value="IP20">IP20 (Finger-safe)</option>
@@ -349,36 +349,36 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Standard (IEC)</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Standard (IEC)</label>
               <input
                 type="text"
                 value={formData.iecStandard}
                 onChange={(e) => setFormData({ ...formData, iecStandard: e.target.value })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-400 mb-1">Unit of Measure</label>
+              <label className="block text-[11px] font-medium text-slate-600 mb-1">Unit of Measure</label>
               <input
                 type="text"
                 value={formData.unit}
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                className="w-full px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-slate-100 focus:border-cyan-500"
+                className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-cyan-500 focus:outline-none"
               />
             </div>
           </div>
         </div>
 
         {/* Dynamic Technical Specifications */}
-        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800">
+        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-mono font-semibold text-slate-300 uppercase">
+            <span className="text-xs font-mono font-bold text-slate-800 uppercase tracking-wider">
               Technical Specifications (EAV Attributes)
             </span>
             <button
               type="button"
               onClick={addSpecRow}
-              className="flex items-center gap-1 text-[11px] font-mono text-cyan-400 hover:text-cyan-300"
+              className="flex items-center gap-1 text-[11px] font-mono font-medium text-cyan-700 hover:text-cyan-800"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Specification</span>
@@ -398,26 +398,26 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
                     placeholder="Spec Name (e.g. Trip Unit)"
                     value={spec.name}
                     onChange={(e) => updateSpecRow(i, 'name', e.target.value)}
-                    className="flex-1 px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100 font-mono"
+                    className="flex-1 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-cyan-500 focus:outline-none"
                   />
                   <input
                     type="text"
                     placeholder="Value (e.g. Ekip Touch LSI)"
                     value={spec.value}
                     onChange={(e) => updateSpecRow(i, 'value', e.target.value)}
-                    className="flex-1 px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100 font-mono"
+                    className="flex-1 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-cyan-500 focus:outline-none"
                   />
                   <input
                     type="text"
                     placeholder="Unit (optional)"
                     value={spec.unit || ''}
                     onChange={(e) => updateSpecRow(i, 'unit', e.target.value)}
-                    className="w-24 px-2.5 py-1 bg-slate-900 border border-slate-700 rounded text-xs text-slate-100 font-mono"
+                    className="w-24 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-cyan-500 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => removeSpecRow(i)}
-                    className="p-1 text-slate-500 hover:text-rose-400"
+                    className="p-1 text-slate-400 hover:text-rose-600 transition"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

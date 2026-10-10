@@ -7,7 +7,10 @@ import {
   PanelType, 
   LabourRate, 
   AuditLogEntry, 
-  DashboardMetrics 
+  DashboardMetrics,
+  ImportedComponentRow,
+  BulkImportOptions,
+  BulkImportResult
 } from '../types';
 import { 
   INITIAL_MANUFACTURERS, 
@@ -24,6 +27,7 @@ import {
   INITIAL_PANELS,
   INITIAL_QUOTATIONS
 } from '../data/phase2SeedData';
+import { INITIAL_BUREAU_CLIENTS } from '../data/bureauSeedData';
 import {
   calculateBusbarRequirements,
   calculateEnclosureCost,
@@ -34,7 +38,9 @@ import {
   EstimatePanel,
   EstimateItem,
   Quotation,
-  ConsolidatedBOMItem
+  ConsolidatedBOMItem,
+  BureauClient,
+  ValueEngineeringOption
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -49,6 +55,7 @@ const STORAGE_KEYS = {
   PROJECTS: 'lv_estimator_projects_v2',
   PANELS: 'lv_estimator_panels_v2',
   QUOTATIONS: 'lv_estimator_quotations_v2',
+  BUREAU_CLIENTS: 'lv_estimator_bureau_clients_v2',
 };
 
 class StorageService {
@@ -101,6 +108,19 @@ class StorageService {
 
   saveCategories(data: ComponentCategory[]): void {
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data));
+  }
+
+  addCategory(c: Omit<ComponentCategory, 'categoryID'>): ComponentCategory {
+    const list = this.getCategories();
+    const newId = list.length > 0 ? Math.max(...list.map(x => x.categoryID)) + 1 : 1;
+    const item: ComponentCategory = {
+      ...c,
+      categoryID: newId,
+    };
+    list.push(item);
+    this.saveCategories(list);
+    this.addAuditLog('system', 'master.Categories', String(newId), 'CREATE_CATEGORY', undefined, `${item.categoryCode} - ${item.categoryName}`);
+    return item;
   }
 
   // --- Suppliers ---
@@ -238,6 +258,226 @@ class StorageService {
     }
   }
 
+  bulkImportComponents(
+    rows: ImportedComponentRow[],
+    options: BulkImportOptions
+  ): BulkImportResult {
+    let components = this.getComponents();
+    let categories = this.getCategories();
+    let manufacturers = this.getManufacturers();
+    let suppliers = this.getSuppliers();
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let pricesAddedCount = 0;
+    let categoriesCreatedCount = 0;
+    let manufacturersCreatedCount = 0;
+    const errors: string[] = [];
+
+    // Helper to find or create category
+    const resolveCategory = (catName: string): ComponentCategory | undefined => {
+      if (!catName || !catName.trim()) return undefined;
+      const trimmed = catName.trim();
+      let found = categories.find(c => 
+        c.categoryName.toLowerCase() === trimmed.toLowerCase() ||
+        c.categoryCode.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (!found && options.autoCreateCategory) {
+        const newCatCode = (trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)) || 'CAT';
+        const newCat = this.addCategory({
+          categoryCode: newCatCode,
+          categoryName: trimmed,
+          isActive: true,
+          defaultIECStandard: 'IEC 60947-2',
+        });
+        categories = this.getCategories();
+        categoriesCreatedCount++;
+        found = newCat;
+      }
+      return found;
+    };
+
+    // Helper to find or create manufacturer
+    const resolveManufacturer = (mfgName: string): Manufacturer | undefined => {
+      if (!mfgName || !mfgName.trim()) return undefined;
+      const trimmed = mfgName.trim();
+      let found = manufacturers.find(m => 
+        m.manufacturerName.toLowerCase() === trimmed.toLowerCase() ||
+        m.manufacturerCode.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (!found && options.autoCreateManufacturer) {
+        const newMfgCode = (trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)) || 'OEM';
+        const newMfg = this.addManufacturer({
+          manufacturerCode: newMfgCode,
+          manufacturerName: trimmed,
+          isActive: true,
+          country: 'Global',
+        });
+        manufacturers = this.getManufacturers();
+        manufacturersCreatedCount++;
+        found = newMfg;
+      }
+      return found;
+    };
+
+    // Helper to find or create supplier
+    const resolveSupplier = (suppName?: string): Supplier | undefined => {
+      if (!suppName || !suppName.trim()) return undefined;
+      const trimmed = suppName.trim();
+      let found = suppliers.find(s => 
+        s.supplierName.toLowerCase() === trimmed.toLowerCase() ||
+        s.supplierCode.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (!found && options.autoCreateSupplier) {
+        const newSuppCode = 'SUP-' + (trimmed.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'NEW');
+        const newSupp = this.addSupplier({
+          supplierCode: newSuppCode,
+          supplierName: trimmed,
+          isActive: true,
+          country: 'United Arab Emirates',
+          currency: 'AED',
+          paymentTerms: '30 Days Net',
+        });
+        suppliers = this.getSuppliers();
+        found = newSupp;
+      }
+      return found;
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowIndex = i + 1;
+
+      if (!row.partNumber || !row.partNumber.trim()) {
+        errors.push(`Row ${rowIndex}: Part Number is missing. Skipped.`);
+        continue;
+      }
+      if (!row.componentName || !row.componentName.trim()) {
+        errors.push(`Row ${rowIndex}: Component Name is missing. Skipped.`);
+        continue;
+      }
+
+      const category = resolveCategory(row.categoryName || 'General LV Switchgear');
+      const manufacturer = resolveManufacturer(row.manufacturerName || 'Generic OEM');
+
+      if (!category) {
+        errors.push(`Row ${rowIndex}: Category "${row.categoryName}" could not be resolved.`);
+        continue;
+      }
+      if (!manufacturer) {
+        errors.push(`Row ${rowIndex}: Manufacturer "${row.manufacturerName}" could not be resolved.`);
+        continue;
+      }
+
+      const partNumTrimmed = row.partNumber.trim();
+      // Re-fetch current components list to reflect any prior additions in this loop
+      components = this.getComponents();
+      const existingComp = components.find(c => 
+        c.partNumber.trim().toLowerCase() === partNumTrimmed.toLowerCase()
+      );
+
+      let targetCompID: number;
+
+      if (existingComp) {
+        targetCompID = existingComp.componentID;
+        if (options.updateExisting) {
+          const updated: Component = {
+            ...existingComp,
+            componentName: row.componentName.trim() || existingComp.componentName,
+            componentCode: row.componentCode?.trim() || existingComp.componentCode,
+            categoryID: category.categoryID,
+            categoryName: category.categoryName,
+            manufacturerID: manufacturer.manufacturerID,
+            manufacturerName: manufacturer.manufacturerName,
+            manufacturerCode: manufacturer.manufacturerCode,
+            model: row.model?.trim() !== undefined ? row.model.trim() : existingComp.model,
+            description: row.description?.trim() !== undefined ? row.description.trim() : existingComp.description,
+            unit: row.unit?.trim() || existingComp.unit || 'EA',
+            ratedVoltage: row.ratedVoltage !== undefined && !isNaN(Number(row.ratedVoltage)) ? Number(row.ratedVoltage) : existingComp.ratedVoltage,
+            ratedCurrent: row.ratedCurrent !== undefined && !isNaN(Number(row.ratedCurrent)) ? Number(row.ratedCurrent) : existingComp.ratedCurrent,
+            poles: row.poles !== undefined && !isNaN(Number(row.poles)) ? Number(row.poles) : existingComp.poles,
+            breakingCapacity: row.breakingCapacity !== undefined && !isNaN(Number(row.breakingCapacity)) ? Number(row.breakingCapacity) : existingComp.breakingCapacity,
+            frequency: row.frequency !== undefined && !isNaN(Number(row.frequency)) ? Number(row.frequency) : existingComp.frequency,
+            ipRating: row.ipRating?.trim() || existingComp.ipRating,
+            mountingType: row.mountingType?.trim() || existingComp.mountingType,
+            iecStandard: row.iecStandard?.trim() || existingComp.iecStandard,
+            updatedAt: new Date().toISOString(),
+          };
+          this.updateComponent(updated);
+          updatedCount++;
+        }
+      } else {
+        const autoCode = row.componentCode?.trim() || 
+          `${manufacturer.manufacturerCode}-${category.categoryCode}-${partNumTrimmed.replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase() || 'ITM'}`;
+        const newComp = this.addComponent({
+          componentCode: autoCode,
+          partNumber: partNumTrimmed,
+          componentName: row.componentName.trim(),
+          categoryID: category.categoryID,
+          categoryName: category.categoryName,
+          manufacturerID: manufacturer.manufacturerID,
+          manufacturerName: manufacturer.manufacturerName,
+          manufacturerCode: manufacturer.manufacturerCode,
+          model: row.model?.trim() || '',
+          description: row.description?.trim() || '',
+          unit: row.unit?.trim() || 'EA',
+          ratedVoltage: row.ratedVoltage !== undefined && !isNaN(Number(row.ratedVoltage)) ? Number(row.ratedVoltage) : 415,
+          ratedCurrent: row.ratedCurrent !== undefined && !isNaN(Number(row.ratedCurrent)) ? Number(row.ratedCurrent) : undefined,
+          poles: row.poles !== undefined && !isNaN(Number(row.poles)) ? Number(row.poles) : 3,
+          breakingCapacity: row.breakingCapacity !== undefined && !isNaN(Number(row.breakingCapacity)) ? Number(row.breakingCapacity) : undefined,
+          frequency: row.frequency !== undefined && !isNaN(Number(row.frequency)) ? Number(row.frequency) : 50,
+          ipRating: row.ipRating?.trim() || 'IP40',
+          mountingType: row.mountingType?.trim() || 'Fixed',
+          iecStandard: row.iecStandard?.trim() || category.defaultIECStandard || 'IEC 60947-2',
+          isActive: true,
+        });
+        targetCompID = newComp.componentID;
+        createdCount++;
+      }
+
+      // Check if price information is provided
+      if (options.importPricing && row.listPrice !== undefined && Number(row.listPrice) > 0) {
+        const supp = resolveSupplier(row.supplierName || `${manufacturer.manufacturerName} Authorized Distributor`);
+        if (supp) {
+          const listPrice = Number(row.listPrice);
+          const discountPercent = row.discountPercent !== undefined && !isNaN(Number(row.discountPercent)) ? Number(row.discountPercent) : 0;
+          this.addOrRevisePrice({
+            componentID: targetCompID,
+            supplierID: supp.supplierID,
+            currency: row.currency || supp.currency || 'AED',
+            listPrice: listPrice,
+            discountPercent: discountPercent,
+            minimumQuantity: 1,
+            priceDate: new Date().toISOString().split('T')[0],
+            quotationReference: row.quotationReference || 'EXCEL_IMPORT',
+            notes: 'Imported from Master Component Excel/CSV Workbook',
+            user: 'Excel Importer',
+          });
+          pricesAddedCount++;
+        }
+      }
+    }
+
+    this.addAuditLog(
+      'system',
+      'master.Components',
+      'BULK_IMPORT',
+      'BULK_IMPORT_COMPONENTS',
+      undefined,
+      `Excel Import summary: ${createdCount} created, ${updatedCount} updated, ${pricesAddedCount} prices, ${errors.length} skipped`
+    );
+
+    return {
+      totalProcessed: rows.length,
+      createdCount,
+      updatedCount,
+      pricesAddedCount,
+      categoriesCreatedCount,
+      manufacturersCreatedCount,
+      errors,
+    };
+  }
+
   // --- Pricing with Strict Historical Preservation ---
   getPrices(): SupplierPrice[] {
     const raw = localStorage.getItem(STORAGE_KEYS.PRICES);
@@ -357,6 +597,29 @@ class StorageService {
 
   savePanelTypes(data: PanelType[]): void {
     localStorage.setItem(STORAGE_KEYS.PANEL_TYPES, JSON.stringify(data));
+  }
+
+  addPanelType(pt: Omit<PanelType, 'panelTypeID'>): PanelType {
+    const list = this.getPanelTypes();
+    const newId = list.length > 0 ? Math.max(...list.map(p => p.panelTypeID)) + 1 : 1;
+    const item: PanelType = { ...pt, panelTypeID: newId };
+    list.push(item);
+    this.savePanelTypes(list);
+    return item;
+  }
+
+  updatePanelType(pt: PanelType): void {
+    const list = this.getPanelTypes();
+    const idx = list.findIndex(p => p.panelTypeID === pt.panelTypeID);
+    if (idx !== -1) {
+      list[idx] = pt;
+      this.savePanelTypes(list);
+    }
+  }
+
+  deletePanelType(panelTypeID: number): void {
+    const list = this.getPanelTypes();
+    this.savePanelTypes(list.filter(p => p.panelTypeID !== panelTypeID));
   }
 
   getLabourRates(): LabourRate[] {
@@ -819,6 +1082,143 @@ class StorageService {
     return quotation;
   }
 
+  // ==========================================
+  // MODEL A: BUREAU CLIENTS & VALUE ENGINEERING
+  // ==========================================
+  getBureauClients(): BureauClient[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.BUREAU_CLIENTS);
+    if (!raw) {
+      this.saveBureauClients(INITIAL_BUREAU_CLIENTS);
+      return INITIAL_BUREAU_CLIENTS;
+    }
+    return JSON.parse(raw);
+  }
+
+  saveBureauClients(data: BureauClient[]): void {
+    localStorage.setItem(STORAGE_KEYS.BUREAU_CLIENTS, JSON.stringify(data));
+  }
+
+  addBureauClient(client: Omit<BureauClient, 'clientID'>): BureauClient {
+    const list = this.getBureauClients();
+    const newId = list.length > 0 ? Math.max(...list.map(c => c.clientID)) + 1 : 1;
+    const item: BureauClient = {
+      ...client,
+      clientID: newId,
+      activeTendersCount: 0,
+      totalWonTendersValue: 0,
+    };
+    list.push(item);
+    this.saveBureauClients(list);
+    this.addAuditLog('bureau', 'master.BureauClients', String(newId), 'CREATE_COMPONENT', undefined, `Client: ${item.clientCode} - ${item.companyName}`);
+    return item;
+  }
+
+  updateBureauClient(client: BureauClient): void {
+    const list = this.getBureauClients();
+    const idx = list.findIndex(c => c.clientID === client.clientID);
+    if (idx !== -1) {
+      list[idx] = client;
+      this.saveBureauClients(list);
+      this.addAuditLog('bureau', 'master.BureauClients', String(client.clientID), 'UPDATE_COMPONENT', undefined, `Updated Client: ${client.companyName}`);
+    }
+  }
+
+  deleteBureauClient(clientID: number): void {
+    const list = this.getBureauClients();
+    const target = list.find(c => c.clientID === clientID);
+    if (target) {
+      const filtered = list.filter(c => c.clientID !== clientID);
+      this.saveBureauClients(filtered);
+      this.addAuditLog('bureau', 'master.BureauClients', String(clientID), 'DELETE_COMPONENT', `${target.clientCode} - ${target.companyName}`, undefined);
+    }
+  }
+
+  calculateValueEngineering(panel: EstimatePanel, client?: BureauClient): ValueEngineeringOption[] {
+    const baseEquipment = panel.equipmentCost || 85000;
+    const baseCopper = panel.copperCost || 18000;
+    const baseEnclosure = panel.enclosureCost || 14500;
+    const baseLabour = panel.labourCost || 11200;
+    const overheadPct = client?.defaultOverheadPercent ?? 8.0;
+    const marginPct = client?.targetMarginPercent ?? 15.0;
+
+    const buildOption = (
+      oemCode: string,
+      oemName: string,
+      equipmentMultiplier: number,
+      leadTimeWeeks: number,
+      complianceRating: number,
+      notes: string
+    ): ValueEngineeringOption => {
+      const discount = client?.oemDiscounts?.find(
+        d => d.manufacturerCode.toUpperCase() === oemCode.toUpperCase()
+      );
+
+      let eqCost = baseEquipment * equipmentMultiplier;
+      if (discount) {
+        const baselineDiscount = 0.35;
+        const clientDisc = discount.standardDiscountPercent / 100;
+        eqCost = eqCost * ((1 - clientDisc) / (1 - baselineDiscount));
+      }
+
+      const totalDirect = eqCost + baseCopper + baseEnclosure + baseLabour;
+      const overhead = totalDirect * (overheadPct / 100);
+      const subtotal = totalDirect + overhead;
+      const sellingPrice = subtotal / (1 - marginPct / 100);
+      const profit = sellingPrice - subtotal;
+
+      return {
+        oemCode,
+        oemName,
+        equipmentCost: Math.round(eqCost),
+        copperCost: Math.round(baseCopper),
+        enclosureCost: Math.round(baseEnclosure),
+        labourCost: Math.round(baseLabour),
+        totalDirectCost: Math.round(totalDirect),
+        overheadAmount: Math.round(overhead),
+        profitAmount: Math.round(profit),
+        sellingPrice: Math.round(sellingPrice),
+        leadTimeWeeks,
+        technicalComplianceRating: complianceRating,
+        complianceNotes: notes,
+      };
+    };
+
+    return [
+      buildOption(
+        'ABB',
+        'ABB Electrification (Emax 2 / Tmax XT)',
+        1.0,
+        8,
+        99,
+        'Consultant base spec. Full ASTA & DEWA/ADDC approved. Withdrawable Emax 2 air circuit breaker with Ekip Touch trip unit.'
+      ),
+      buildOption(
+        'SCHNEIDER',
+        'Schneider Electric (MasterPact MTZ / ComPact NSX)',
+        0.95,
+        7,
+        98,
+        'High market availability in UAE/GCC. Micrologic electronic trip units with integrated Class 1 metering. Fast factory delivery.'
+      ),
+      buildOption(
+        'SIEMENS',
+        'Siemens AG (Sentron 3WL / 3VA)',
+        0.91,
+        9,
+        97,
+        'Most cost-effective Tier-1 alternative. Excellent short-circuit fault withstand with ETU trip units.'
+      ),
+      buildOption(
+        'HAGER',
+        'Hager / Eaton Hybrid Value Option',
+        0.84,
+        6,
+        92,
+        'Optimized for competitive commercial tenders. Form 3b execution with fast-track 6-week factory delivery.'
+      )
+    ];
+  }
+
   // Reset to default seed data
   resetAllData(): void {
     localStorage.removeItem(STORAGE_KEYS.MANUFACTURERS);
@@ -832,6 +1232,7 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.PROJECTS);
     localStorage.removeItem(STORAGE_KEYS.PANELS);
     localStorage.removeItem(STORAGE_KEYS.QUOTATIONS);
+    localStorage.removeItem(STORAGE_KEYS.BUREAU_CLIENTS);
   }
 }
 
