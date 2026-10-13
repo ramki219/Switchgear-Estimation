@@ -20,13 +20,18 @@ import {
   EstimatePanel,
   Quotation,
   ConsolidatedBOMItem,
-  BulkImportResult
+  BulkImportResult,
+  CompanyTenant,
+  SaaSSubscription,
+  SaaSPlan,
+  SaaSUser
 } from './types';
 
 // Layout
 import { Sidebar, NavView } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { ConfirmationDialog } from './components/common/ConfirmationDialog';
+import { AuthModal } from './components/auth/AuthModal';
 
 // Views
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -53,8 +58,72 @@ import { ProjectFormModal } from './components/estimation/ProjectFormModal';
 import { BureauHubView } from './components/bureau/BureauHubView';
 import { SLDStudioView } from './components/engineering/SLDStudioView';
 
+// Commercial SaaS & Production Handover Views
+import { ProductionHandoverView } from './components/production/ProductionHandoverView';
+import { SaaSBillingView } from './components/saas/SaaSBillingView';
+import { CompanySettingsView } from './components/saas/CompanySettingsView';
+import { FacebookLoginScreen } from './components/auth/FacebookLoginScreen';
+import { ProjectDocumentationModal } from './components/documentation/ProjectDocumentationModal';
+import { auth } from './lib/firebase';
+import { signOut } from 'firebase/auth';
+import { apiClient } from './services/apiClient';
+
 export default function App() {
   const [currentView, setCurrentView] = useState<NavView>('dashboard');
+
+  // SaaS Multi-Tenant State
+  const [company, setCompany] = useState<CompanyTenant>(() => {
+    const saved = localStorage.getItem('switchgear_saas_company');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      id: 1,
+      companyCode: 'EMIRATES-LV-01',
+      companyName: 'Emirates Switchgear Manufacturing LLC',
+      tradeLicenseNo: 'CN-1029384',
+      country: 'United Arab Emirates',
+      city: 'Dubai',
+      address: 'Al Quoz Industrial Area 4, Dubai, UAE',
+      phone: '+971 4 345 6789',
+      email: 'sales@emiratesswitchgear.ae',
+      vatTrn: '100234567800003',
+      currency: 'AED',
+      defaultCostingMethod: 'MARKUP',
+      defaultMarginPercent: 15.00,
+      defaultVatPercent: 5.00,
+      plan: 'PROFESSIONAL',
+      subscriptionStatus: 'ACTIVE',
+    };
+  });
+
+  const [subscription, setSubscription] = useState<SaaSSubscription | null>({
+    id: 1,
+    companyId: 1,
+    plan: 'PROFESSIONAL',
+    priceAedMonthly: 499,
+    billingCycle: 'MONTHLY',
+    status: 'ACTIVE',
+    maxProjects: 50,
+    maxUsers: 5,
+    autoRenew: true,
+  });
+
+  // User session: starts null unless restored from active session in localStorage
+  const [currentUser, setCurrentUser] = useState<SaaSUser | null>(() => {
+    const saved = localStorage.getItem('switchgear_saas_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
 
   // Application Data States
   const [components, setComponents] = useState<Component[]>([]);
@@ -296,6 +365,99 @@ export default function App() {
     }
   };
 
+  // Handlers for SaaS Subscription & Company Profile
+  const handleUpgradePlan = async (newPlan: SaaSPlan, billingCycle: 'MONTHLY' | 'ANNUAL') => {
+    try {
+      const res = await apiClient.post('/api/tenant/subscription/change-plan', { plan: newPlan, billingCycle });
+      if (res) {
+        setSubscription(res);
+        setCompany(prev => ({ ...prev, plan: newPlan }));
+      }
+    } catch (e) {
+      console.warn('API update failed, updating state locally:', e);
+      setCompany(prev => ({ ...prev, plan: newPlan }));
+      setSubscription(prev => prev ? { ...prev, plan: newPlan, billingCycle } : null);
+    }
+  };
+
+  const handleSaveCompanySettings = async (updated: Partial<CompanyTenant>) => {
+    try {
+      const res = await apiClient.put('/api/tenant/company', updated);
+      if (res) {
+        setCompany(prev => ({ ...prev, ...res }));
+      }
+    } catch (e) {
+      console.warn('API update failed, updating state locally:', e);
+      setCompany(prev => ({ ...prev, ...updated }));
+    }
+  };
+
+  const handleLoginSuccess = (user: SaaSUser, tenantCompany: CompanyTenant) => {
+    setCurrentUser(user);
+    setCompany(tenantCompany);
+    localStorage.setItem('switchgear_saas_user', JSON.stringify(user));
+    localStorage.setItem('switchgear_saas_company', JSON.stringify(tenantCompany));
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('Firebase signOut notice:', e);
+    }
+    localStorage.removeItem('switchgear_saas_user');
+    localStorage.removeItem('switchgear_saas_company');
+    setCurrentUser(null);
+  };
+
+  const handleSwitchTenant = (newCompany: CompanyTenant, newUser: SaaSUser) => {
+    setCompany(newCompany);
+    setCurrentUser(newUser);
+    localStorage.setItem('switchgear_saas_user', JSON.stringify(newUser));
+    localStorage.setItem('switchgear_saas_company', JSON.stringify(newCompany));
+    if (newCompany.id === 2) {
+      // Demonstrating strict multi-tenant isolation: Tenant 2 sees only their own tenders
+      setProjects([
+        {
+          projectID: 201,
+          projectCode: 'GULF-2026-001',
+          projectName: 'Musaffah 33/11kV Substation Auxiliary PCC & MCC',
+          clientName: 'Abu Dhabi Distribution Company (ADDC)',
+          consultantName: 'KEO International Consultants',
+          location: 'Musaffah Industrial, Abu Dhabi',
+          authority: 'ADDC',
+          status: 'IN_ESTIMATION',
+          createdDate: '2026-10-02',
+          dueDate: '2026-11-20',
+          currency: 'AED',
+          assignedEstimator: 'Eng. Suresh Kumar',
+          targetMarginPercent: 18.5,
+          totalCost: 345000,
+          sellingPrice: 423312,
+          panelsCount: 4,
+          primaryOEM: 'ABB',
+          copperRatePerKg: 42.50,
+        }
+      ]);
+      setActiveProject(null);
+    } else {
+      loadData();
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // AUTHENTICATION GATE:
+  // Website dashboard and panels are strictly visible ONLY AFTER LOGIN.
+  // When no active session exists, display the Facebook-Style Login Gateway.
+  // --------------------------------------------------------------------------
+  if (!currentUser) {
+    return (
+      <FacebookLoginScreen
+        onLoginSuccess={handleLoginSuccess}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
       {/* Sidebar Navigation */}
@@ -305,6 +467,11 @@ export default function App() {
         componentCount={components.length}
         priceCount={prices.length}
         projectCount={projects.length}
+        currentUser={currentUser}
+        currentCompany={company}
+        onLogout={handleLogout}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onOpenDocumentation={() => setIsDocModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -312,6 +479,11 @@ export default function App() {
         {/* Top Header */}
         <Header
           currentView={currentView}
+          currentUser={currentUser}
+          currentCompany={company}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onLogout={handleLogout}
+          onOpenDocumentation={() => setIsDocModalOpen(true)}
           onOpenAddComponent={() => {
             setComponentToEdit(null);
             setIsComponentFormOpen(true);
@@ -518,6 +690,30 @@ export default function App() {
             <ArchitectureView />
           )}
 
+          {currentView === 'production' && (
+            <ProductionHandoverView
+              projects={projects}
+              activeProject={activeProject}
+              panels={activePanels}
+              onSelectProject={setActiveProject}
+            />
+          )}
+
+          {currentView === 'saas_billing' && (
+            <SaaSBillingView
+              company={company}
+              subscription={subscription}
+              onUpgradePlan={handleUpgradePlan}
+            />
+          )}
+
+          {currentView === 'company_settings' && (
+            <CompanySettingsView
+              company={company}
+              onSaveCompany={handleSaveCompanySettings}
+            />
+          )}
+
           {currentView === 'audit' && (
             <AuditLogView logs={auditLogs} />
           )}
@@ -619,6 +815,23 @@ export default function App() {
         message="Are you sure you want to delete this project and all its configured switchboards? This action cannot be undone."
         confirmLabel="Delete Project"
         isDestructive={true}
+      />
+
+      {/* SaaS Google Authentication & Multi-Tenant Isolation Switcher Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        currentCompany={company}
+        onSwitchTenant={handleSwitchTenant}
+        onSignOut={handleLogout}
+      />
+
+      {/* Project Architecture & Engineering Specification PDF Modal */}
+      <ProjectDocumentationModal
+        isOpen={isDocModalOpen}
+        onClose={() => setIsDocModalOpen(false)}
+        currentCompany={company}
       />
     </div>
   );

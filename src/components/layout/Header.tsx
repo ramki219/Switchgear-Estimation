@@ -1,23 +1,34 @@
 import React from 'react';
-import { Plus, Download, RefreshCw, Database, DollarSign } from 'lucide-react';
+import { Plus, Download, RefreshCw, Database, DollarSign, ShieldCheck, User, Building2, LogOut, FileText } from 'lucide-react';
 import { NavView } from './Sidebar';
+import { CompanyTenant, SaaSUser } from '../../types';
 
 interface HeaderProps {
   currentView: NavView;
+  currentUser?: SaaSUser | null;
+  currentCompany?: CompanyTenant;
+  onOpenAuthModal?: () => void;
+  onLogout?: () => void;
   onOpenAddComponent: () => void;
   onOpenAddPrice: () => void;
   onResetData: () => void;
   onExportCSV: () => void;
   onOpenArchitecture: () => void;
+  onOpenDocumentation?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentView,
+  currentUser,
+  currentCompany,
+  onOpenAuthModal,
+  onLogout,
   onOpenAddComponent,
   onOpenAddPrice,
   onResetData,
   onExportCSV,
   onOpenArchitecture,
+  onOpenDocumentation,
 }) => {
   const titles: Record<NavView, { title: string; subtitle: string }> = {
     dashboard: {
@@ -47,6 +58,18 @@ export const Header: React.FC<HeaderProps> = ({
     quotations: {
       title: 'Commercial Quotations & Proposal Generator',
       subtitle: 'Direct manufacturing costs, overhead %, margin markup, GCC VAT calculation & formal client proposals',
+    },
+    production: {
+      title: 'Production Handover & Procurement Floor',
+      subtitle: 'Approved BOM conversion, workshop job cards, fabrication tracking, shortage reports & material requisitions',
+    },
+    saas_billing: {
+      title: 'SaaS Subscription Plans & Licensing',
+      subtitle: 'Multi-tenant cloud licensing for UAE switchgear manufacturers, project quotas & plan upgrades in AED',
+    },
+    company_settings: {
+      title: 'Company Profile, UAE TRN & Costing Settings',
+      subtitle: 'Trade license details, 15-digit FTA VAT TRN, costing formulas (Markup vs Margin), UAE VAT & engineering team roles',
     },
     components: {
       title: 'Component Master Catalog',
@@ -94,6 +117,57 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2.5">
+        {/* User Authentication & Tenant Isolation Badge */}
+        {onOpenAuthModal && (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onOpenAuthModal}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs transition shadow-2xs font-mono"
+              title="SaaS User Session & Multi-Tenant Switcher"
+            >
+              <div className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center font-bold text-[10px]">
+                {currentUser?.fullName?.charAt(0) || 'U'}
+              </div>
+              <div className="text-left font-sans leading-tight hidden lg:block">
+                <div className="text-[11px] font-bold text-slate-900 truncate max-w-[140px]">
+                  {currentUser?.fullName || 'User'}
+                </div>
+                <div className="text-[9px] text-slate-500 font-mono flex items-center gap-1">
+                  <span className="text-cyan-800 font-semibold">{currentCompany?.companyCode || 'TENANT'}</span>
+                  <span>•</span>
+                  <span className="text-emerald-700 font-bold">{currentUser?.role?.replace('_', ' ') || 'USER'}</span>
+                </div>
+              </div>
+              <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-bold ml-1 font-mono">
+                Switch
+              </span>
+            </button>
+
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors shadow-2xs"
+                title="Log out and return to Login Screen"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline font-mono text-[11px]">Logout</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Project Manual & PDF Architecture button */}
+        {onOpenDocumentation && (
+          <button
+            onClick={onOpenDocumentation}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 border border-blue-500 rounded-md transition-all shadow-2xs"
+            title="Open Project Architecture Manual & Download Official PDF"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Project PDF Manual</span>
+          </button>
+        )}
+
         {/* SQL Architecture shortcut */}
         <button
           onClick={onOpenArchitecture}

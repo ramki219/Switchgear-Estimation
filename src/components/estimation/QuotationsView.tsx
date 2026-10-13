@@ -5,6 +5,7 @@ import {
   ArrowLeft, 
   Save, 
   Download, 
+  Award,
 } from 'lucide-react';
 import { exportQuotationToCSV } from '../../services/exportService';
 
@@ -14,6 +15,7 @@ interface QuotationsViewProps {
   quotation?: Quotation;
   onBackToEstimation: () => void;
   onSaveQuotation: (quoteData: any) => void;
+  onOpenDossier?: (project: Project) => void;
 }
 
 export const QuotationsView: React.FC<QuotationsViewProps> = ({
@@ -22,6 +24,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
   quotation,
   onBackToEstimation,
   onSaveQuotation,
+  onOpenDossier,
 }) => {
   const [quotationNumber, setQuotationNumber] = useState('');
   const [revisionNumber, setRevisionNumber] = useState('R0');
@@ -194,6 +197,17 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
               Printable Client Proposal
             </button>
           </div>
+
+          {onOpenDossier && (
+            <button
+              onClick={() => onOpenDossier(project)}
+              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+              title="Compile and preview formal tender dossier and IEC 61439 submittal package"
+            >
+              <Award className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Official Submittal Dossier</span>
+            </button>
+          )}
 
           <button
             onClick={handleExportCSV}

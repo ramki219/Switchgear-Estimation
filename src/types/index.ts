@@ -378,5 +378,106 @@ export interface ValueEngineeringOption {
   complianceNotes: string;
 }
 
+// ============================================================================
+// SAAS MULTI-TENANCY, SUBSCRIPTIONS & PRODUCTION HANDOVER TYPES
+// ============================================================================
+
+export type SaaSPlan = 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS';
+
+export type SaaSRole = 
+  | 'PLATFORM_ADMIN' 
+  | 'COMPANY_OWNER' 
+  | 'ESTIMATION_ENGINEER' 
+  | 'DESIGN_ENGINEER' 
+  | 'PURCHASE_OFFICER' 
+  | 'PRODUCTION_USER' 
+  | 'READ_ONLY';
+
+export interface CompanyTenant {
+  id: number;
+  companyCode: string;
+  companyName: string;
+  tradeLicenseNo?: string;
+  country: string;
+  city: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  vatTrn?: string;
+  currency: string;
+  defaultCostingMethod: 'MARKUP' | 'MARGIN';
+  defaultMarginPercent: number;
+  defaultVatPercent: number;
+  plan: SaaSPlan;
+  subscriptionStatus: 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED';
+  trialEndsAt?: string;
+}
+
+export interface SaaSSubscription {
+  id: number;
+  companyId: number;
+  plan: SaaSPlan;
+  priceAedMonthly: number;
+  billingCycle: 'MONTHLY' | 'ANNUAL';
+  status: 'ACTIVE' | 'TRIAL' | 'EXPIRED';
+  maxProjects: number;
+  maxUsers: number;
+  featuresJson?: string;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  autoRenew: boolean;
+}
+
+export interface SaaSUser {
+  id: number;
+  uid: string;
+  companyId: number;
+  email: string;
+  fullName: string;
+  role: SaaSRole;
+  phone?: string;
+  isActive: boolean;
+}
+
+export interface ProductionJobCard {
+  id: number;
+  companyId: number;
+  projectId: number;
+  panelId?: number;
+  jobNumber: string;
+  panelTag: string;
+  status: 'QUEUED' | 'FABRICATION' | 'BUSBAR_WORK' | 'ASSEMBLY' | 'WIRING' | 'TESTING' | 'FAT_PASSED' | 'DISPATCHED';
+  targetDate?: string;
+  actualCompletionDate?: string;
+  supervisor?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchaseRequisitionRecord {
+  id: number;
+  companyId: number;
+  projectId: number;
+  prNumber: string;
+  status: 'PENDING' | 'APPROVED' | 'PO_ISSUED';
+  supplierName: string;
+  totalAmount: number;
+  requestedBy?: string;
+  itemsSummary?: string;
+  createdAt: string;
+}
+
+export interface AuditLogRecord {
+  id: number;
+  companyId: number;
+  userId?: number;
+  userEmail?: string;
+  action: string;
+  entity: string;
+  entityId?: number;
+  details?: string;
+  timestamp: string;
+}
+
 export * from './engineering';
 

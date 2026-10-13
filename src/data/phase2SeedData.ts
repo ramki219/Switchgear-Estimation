@@ -1,4 +1,4 @@
-import { Project, EstimatePanel, Quotation } from '../types';
+import type { Project, EstimatePanel, Quotation } from '../types/index.ts';
 
 export const INITIAL_PROJECTS: Project[] = [
   {

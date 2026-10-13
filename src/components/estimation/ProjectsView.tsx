@@ -15,7 +15,8 @@ import {
   TrendingUp, 
   Layers, 
   MapPin,
-  Zap 
+  Zap,
+  Award 
 } from 'lucide-react';
 
 interface ProjectsViewProps {
@@ -24,6 +25,7 @@ interface ProjectsViewProps {
   onSelectProjectForQuotation: (project: Project) => void;
   onSelectProjectForBOM: (project: Project) => void;
   onSelectProjectForSLD?: (project: Project) => void;
+  onOpenDossier?: (project: Project) => void;
   onOpenNewProject: () => void;
   onOpenEditProject: (project: Project) => void;
   onDeleteProject: (projectId: number) => void;
@@ -35,6 +37,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   onSelectProjectForQuotation,
   onSelectProjectForBOM,
   onSelectProjectForSLD,
+  onOpenDossier,
   onOpenNewProject,
   onOpenEditProject,
   onDeleteProject,
@@ -281,6 +284,17 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                   <FileText className="w-3.5 h-3.5 text-purple-700" />
                   <span>Quotation</span>
                 </button>
+
+                {onOpenDossier && (
+                  <button
+                    onClick={() => onOpenDossier(p)}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-2xs"
+                    title="Generate complete commercial submittal package & IEC 61439 tender dossier"
+                  >
+                    <Award className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Tender Dossier</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => onSelectProjectForBOM(p)}

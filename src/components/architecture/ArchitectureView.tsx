@@ -9,9 +9,11 @@ import {
   Server, 
   Layers, 
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { downloadSQLScript } from '../../services/exportService';
+import { downloadProjectDocumentationPDF } from '../../services/projectDocumentationPdfService';
 
 export const ArchitectureView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'001' | '002' | '003' | '004' | '005' | 'efcore' | 'api' | 'setup'>('001');
@@ -417,6 +419,14 @@ git push -u origin main
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => downloadProjectDocumentationPDF()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-lg text-xs font-mono font-bold transition-all shadow-2xs"
+            title="Download Complete Technical PDF Manual with Architecture, Schema and Workflows"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Download Project PDF Manual</span>
+          </button>
           <button
             onClick={() => downloadSQLScript(currentScript.filename, currentScript.code)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-mono font-medium transition-colors shadow-2xs"

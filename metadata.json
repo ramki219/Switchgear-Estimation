@@ -1,6 +1,6 @@
 {
   "name": "LV Switchgear Estimator",
-  "description": "Production-grade Low Voltage Switchgear estimation, master data catalog, component pricing, and engineering quotation system.",
+  "description": "Commercial multi-tenant LV switchgear estimation, IEC 61439 SLD design, 2D panel GA layout, production handover, and quotation platform for UAE switchgear manufacturers.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

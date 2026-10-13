@@ -11,7 +11,7 @@ import {
   ImportedComponentRow,
   BulkImportOptions,
   BulkImportResult
-} from '../types';
+} from '../types/index';
 import { 
   INITIAL_MANUFACTURERS, 
   INITIAL_CATEGORIES, 
@@ -41,7 +41,7 @@ import {
   ConsolidatedBOMItem,
   BureauClient,
   ValueEngineeringOption
-} from '../types';
+} from '../types/index';
 
 const STORAGE_KEYS = {
   MANUFACTURERS: 'lv_estimator_manufacturers_v1',

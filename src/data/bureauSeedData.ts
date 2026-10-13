@@ -1,4 +1,4 @@
-import { BureauClient } from '../types';
+import type { BureauClient } from '../types/index.ts';
 
 export const INITIAL_BUREAU_CLIENTS: BureauClient[] = [
   {

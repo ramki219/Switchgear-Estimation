@@ -1,4 +1,4 @@
-import { 
+import type { 
   Manufacturer, 
   ComponentCategory, 
   Component, 
@@ -8,7 +8,7 @@ import {
   PanelType, 
   LabourRate, 
   AuditLogEntry 
-} from '../types';
+} from '../types/index.ts';
 
 export const INITIAL_MANUFACTURERS: Manufacturer[] = [
   {
