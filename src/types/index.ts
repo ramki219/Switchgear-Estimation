@@ -54,6 +54,14 @@ export interface Component {
   updatedAt?: string;
   specifications?: ComponentSpecification[];
   currentPrice?: SupplierPrice;
+  // Enclosure sizing parameters if category is ENCLOSURE
+  enclosureHeight?: number; // mm
+  enclosureWidth?: number; // mm
+  enclosureDepth?: number; // mm
+  columns?: number;
+  formOfSeparation?: string;
+  sheetMetalThickness?: number;
+  isEnclosureSize?: boolean;
 }
 
 export interface Supplier {
@@ -216,12 +224,25 @@ export interface EstimatePanel {
   ipRating: string; // "IP42", "IP54", "IP65"
   cableEntry: CableEntryType;
   
-  // Copper Busbar Parameters
-  busbarCurrentDensity: number; // A/mm2, e.g. 1.5
-  copperBaseRatePerKg: number; // AED/kg, e.g. 42.00
-  copperCrossSectionMm2: number; // computed mm2
-  copperWeightKg: number; // computed kg
-  copperCost: number; // computed cost
+  // Copper Busbar Parameters (Total Length x Density based on Dimensions x Copper Price + Labour Charges)
+  busbarCurrentDensity?: number; // A/mm2, e.g. 1.5
+  busbarWidthMm?: number; // Width of busbar bar in mm (e.g. 50, 80, 100)
+  busbarThicknessMm?: number; // Thickness of busbar bar in mm (e.g. 5, 10)
+  busbarRunsPerPhase?: number; // Runs/bars per phase (e.g. 1, 2, 3, 4)
+  busbarPhasesCount?: number; // Number of conductors (e.g. 4 for 3P+N, 5 for 3P+N+PE)
+  busbarTotalLengthMeters?: number; // Total length of busbar used per panel in meters
+  copperDensityKgDm3?: number; // Density constant of copper in kg/meter, default 0.00896 kg/meter
+  copperCrossSectionMm2: number; // Cross section per phase in mm2
+  copperWeightKg: number; // Total copper weight in kg
+  copperBaseRatePerKg: number; // Current copper price manually applied (AED/kg)
+  copperMaterialCost?: number; // Total copper material cost in AED
+  busbarLabourHours?: number; // Provision for busbar fabrication labour hours
+  busbarLabourRatePerHour?: number; // Busbar fabrication labour rate per hour (AED/hr)
+  busbarLabourCost?: number; // Provision for busbar labour charges in AED
+  busbarHardwareCost?: number; // Insulators, hardware, and heat-shrink sleeving in AED
+  isCustomBusbarCost?: boolean; // Flag if estimator manually overrides busbar cost
+  customBusbarCost?: number; // Manually entered custom busbar cost in AED
+  copperCost: number; // Total cost of the busbar (Material + Labour + Hardware)
   
   // Enclosure Parameters
   enclosureHeight: number; // mm, e.g. 2100
@@ -229,7 +250,17 @@ export interface EstimatePanel {
   enclosureDepth: number; // mm, e.g. 800
   numberOfColumns: number;
   sheetMetalThickness: number; // mm, e.g. 2.0
-  enclosureCost: number; // computed cost
+  enclosureCost: number; // computed or database cost
+
+  // Enclosure Brand Catalogue & Custom Pricing
+  enclosureSource?: 'CATALOGUE' | 'CUSTOM' | 'CALCULATED';
+  enclosureBrand?: string; // e.g. 'Alfanar', 'RR Global', 'ABB', 'Schneider', 'Siemens', 'Rittal'
+  enclosureModel?: string; // e.g. 'Alfanar Prominence Form 4b MDB 2500A'
+  enclosureComponentID?: number;
+  enclosurePartNumber?: string;
+  isCustomEnclosurePrice?: boolean;
+  customEnclosurePrice?: number;
+  catalogueEnclosurePrice?: number;
 
   // Equipment & Labour Summary
   equipmentCost: number; // sum of items totalCost
@@ -316,6 +347,32 @@ export interface ImportedComponentRow {
   listPrice?: number;
   discountPercent?: number;
   quotationReference?: string;
+}
+
+export interface ImportedPanelSizeRow {
+  brand: string; // e.g. "Alfanar", "RR Global", "ABB", "Schneider", "Siemens", "Rittal"
+  partNumber: string; // e.g. "ALF-PRM-2500-4B6"
+  modelName: string; // e.g. "Alfanar Prominence Form 4b MDB 2500A"
+  panelTypeCode?: string; // "MDB", "SMDB", "APFC", "MCC", "ATS", "DB"
+  enclosureHeight: number; // mm
+  enclosureWidth: number; // mm
+  enclosureDepth: number; // mm
+  columns?: number;
+  formOfSeparation?: string; // "Form 4b Type 6", "Form 2b", etc.
+  ipRating?: string; // "IP42", "IP54", "IP65"
+  incomerRating?: number; // Amps: e.g. 2500, 630
+  mountingType?: string; // "Floor Standing", "Wall Mounted"
+  sheetMetalThickness?: number; // mm, default 2.0
+  iecStandard?: string; // "IEC 61439-1/2"
+  description?: string;
+  // Commercial pricing
+  netPrice: number; // Listed Database Price (AED)
+  listPrice?: number;
+  discountPercent?: number;
+  supplierName?: string;
+  currency?: string;
+  quotationReference?: string;
+  leadTimeDays?: number;
 }
 
 export interface BulkImportOptions {

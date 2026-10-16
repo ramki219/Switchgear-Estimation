@@ -38,6 +38,13 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
     mountingType: 'Fixed',
     iecStandard: 'IEC 60947-2',
     isActive: true,
+    enclosureHeight: 2100,
+    enclosureWidth: 2400,
+    enclosureDepth: 800,
+    columns: 3,
+    formOfSeparation: 'Form 4b Type 6',
+    sheetMetalThickness: 2.0,
+    isEnclosureSize: false,
   });
 
   const [specs, setSpecs] = useState<{ name: string; value: string; unit?: string }[]>([]);
@@ -63,6 +70,13 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
         mountingType: componentToEdit.mountingType || 'Fixed',
         iecStandard: componentToEdit.iecStandard || 'IEC 60947-2',
         isActive: componentToEdit.isActive,
+        enclosureHeight: componentToEdit.enclosureHeight || 2100,
+        enclosureWidth: componentToEdit.enclosureWidth || 2400,
+        enclosureDepth: componentToEdit.enclosureDepth || 800,
+        columns: componentToEdit.columns || 3,
+        formOfSeparation: componentToEdit.formOfSeparation || 'Form 4b Type 6',
+        sheetMetalThickness: componentToEdit.sheetMetalThickness || 2.0,
+        isEnclosureSize: componentToEdit.isEnclosureSize || componentToEdit.categoryID === 11,
       });
       setSpecs(
         componentToEdit.specifications
@@ -88,6 +102,13 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
         mountingType: 'Fixed',
         iecStandard: 'IEC 60947-2',
         isActive: true,
+        enclosureHeight: 2100,
+        enclosureWidth: 2400,
+        enclosureDepth: 800,
+        columns: 3,
+        formOfSeparation: 'Form 4b Type 6',
+        sheetMetalThickness: 2.0,
+        isEnclosureSize: false,
       });
       setSpecs([]);
     }
@@ -368,6 +389,80 @@ export const ComponentFormModal: React.FC<ComponentFormModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Enclosure Sizing Architecture (Shown when category is Enclosure or flagged as Enclosure Size) */}
+        {(Number(formData.categoryID) === 11 || formData.isEnclosureSize) && (
+          <div className="bg-blue-50/70 p-4 rounded-xl border border-blue-200 space-y-3 font-mono">
+            <div className="flex items-center justify-between border-b border-blue-200/80 pb-2">
+              <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                <span>Enclosure Carcass Architecture & Physical Sizing</span>
+              </span>
+              <span className="text-[11px] text-blue-700 font-bold bg-blue-100 px-2 py-0.5 rounded">
+                Modular Switchboard
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">Height (mm) *</label>
+                <input
+                  type="number"
+                  value={formData.enclosureHeight}
+                  onChange={(e) => setFormData({ ...formData, enclosureHeight: Number(e.target.value) })}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">Width (mm) *</label>
+                <input
+                  type="number"
+                  value={formData.enclosureWidth}
+                  onChange={(e) => setFormData({ ...formData, enclosureWidth: Number(e.target.value) })}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">Depth (mm) *</label>
+                <input
+                  type="number"
+                  value={formData.enclosureDepth}
+                  onChange={(e) => setFormData({ ...formData, enclosureDepth: Number(e.target.value) })}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">Columns / Tiers</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={formData.columns}
+                  onChange={(e) => setFormData({ ...formData, columns: Number(e.target.value) })}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-700 mb-1">Separation Form</label>
+                <select
+                  value={formData.formOfSeparation}
+                  onChange={(e) => setFormData({ ...formData, formOfSeparation: e.target.value })}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="Form 1">Form 1</option>
+                  <option value="Form 2b">Form 2b</option>
+                  <option value="Form 3b">Form 3b</option>
+                  <option value="Form 4a">Form 4a</option>
+                  <option value="Form 4b Type 6">Form 4b Type 6</option>
+                  <option value="Form 4b Type 7">Form 4b Type 7</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Technical Specifications */}
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">

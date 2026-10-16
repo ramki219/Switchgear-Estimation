@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Project, EstimatePanel, Quotation } from '../../types';
+import { Project, EstimatePanel, Quotation, CompanyTenant } from '../../types';
 import { Badge } from '../common/Badge';
 import { 
   ArrowLeft, 
   Save, 
   Download, 
   Award,
+  FileDown,
+  Printer,
+  CheckCircle2,
+  FileText
 } from 'lucide-react';
 import { exportQuotationToCSV } from '../../services/exportService';
+import { generateQuotationPDF } from '../../services/quotationPdfService';
 
 interface QuotationsViewProps {
   project: Project;
   panels: EstimatePanel[];
   quotation?: Quotation;
+  company?: CompanyTenant | null;
   onBackToEstimation: () => void;
   onSaveQuotation: (quoteData: any) => void;
   onOpenDossier?: (project: Project) => void;
@@ -22,6 +28,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
   project,
   panels,
   quotation,
+  company,
   onBackToEstimation,
   onSaveQuotation,
   onOpenDossier,
@@ -152,6 +159,79 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
     exportQuotationToCSV(currentQuoteObj, panels);
   };
 
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
+
+  const handleDownloadPDF = () => {
+    setIsGeneratingPdf(true);
+    try {
+      const currentQuoteObj: Quotation = {
+        quotationID: quotation?.quotationID || 0,
+        projectID: project.projectID,
+        projectCode: project.projectCode,
+        projectName: project.projectName,
+        clientName: project.clientName,
+        quotationNumber: quotationNumber || `QT-${new Date().getFullYear()}-${String(project.projectID).padStart(3, '0')}-R0`,
+        revisionNumber,
+        quotationDate: quotationDate || new Date().toISOString().split('T')[0],
+        validityDays,
+        currency: project.currency,
+        deliveryPeriodWeeks: deliveryWeeks,
+        warrantyMonths,
+        paymentTerms,
+        inclusions: quotation?.inclusions || [
+          'Complete supply of LV switchboards as per single line diagram (SLD) & approved engineering specs',
+          'Factory routine testing (FAT) per IEC 61439-1/2 (Megger, Dielectric Withstand, Functional Tripping)',
+          'Standard export packing and delivery to site within UAE',
+        ],
+        exclusions: quotation?.exclusions || [
+          'Civil works, foundations, and wall cutting',
+          'Site cabling, termination, and cable glands',
+          'Authority inspection fees (DEWA / SEWA / ADDC)',
+        ],
+        status,
+        totalEquipmentCost,
+        totalCopperCost,
+        totalEnclosureCost,
+        totalLabourCost,
+        totalDirectCost,
+        overheadPercent,
+        overheadAmount,
+        profitMarginPercent,
+        profitMarginAmount,
+        subtotalBeforeTax,
+        taxPercent,
+        taxAmount,
+        grandTotal,
+      };
+
+      const doc = generateQuotationPDF({
+        project,
+        panels,
+        quotation: currentQuoteObj,
+        company,
+        calculationDetails: {
+          totalDirectCost,
+          overheadAmount,
+          profitMarginAmount,
+          subtotalBeforeTax,
+          taxAmount,
+          grandTotal,
+        },
+      });
+
+      const cleanCode = (project.projectCode || 'PROJECT').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanQuote = (quotationNumber || 'QT').replace(/[^a-zA-Z0-9_-]/g, '_');
+      doc.save(`${cleanCode}_Quotation_${cleanQuote}.pdf`);
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3500);
+    } catch (err) {
+      console.error('Failed to generate quotation PDF:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-5 font-mono">
       {/* Header Bar */}
@@ -212,9 +292,35 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
           <button
             onClick={handleExportCSV}
             className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs"
+            title="Export Bill of Quantities to CSV"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
+          </button>
+
+          {/* Official Downloadable PDF Quotation Button */}
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isGeneratingPdf}
+            className="bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-2xs disabled:opacity-60"
+            title="Download Formal UAE Tax & Commercial Quotation PDF with 15-Digit TRN & 5% VAT"
+          >
+            {isGeneratingPdf ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <span>Generating PDF...</span>
+              </>
+            ) : pdfSuccess ? (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-300">Downloaded PDF!</span>
+              </>
+            ) : (
+              <>
+                <FileDown className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Download PDF Quote</span>
+              </>
+            )}
           </button>
 
           <button
@@ -441,7 +547,30 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
         </div>
       ) : (
         /* PRINTABLE FORMAL CLIENT PROPOSAL */
-        <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-4xl mx-auto space-y-6 text-slate-900 text-xs shadow-lg">
+        <div className="space-y-4 max-w-4xl mx-auto">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-900 text-white p-3.5 rounded-xl border border-slate-800 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300">
+                <Printer className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-white block">Client Proposal Preview Mode</span>
+                <span className="text-[11px] text-slate-400 font-sans">
+                  Official UAE Tax Quotation Format • TRN {company?.vatTrn || '100293847500003'} • 5% VAT
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={isGeneratingPdf}
+              className="w-full sm:w-auto bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition shadow-xs disabled:opacity-60 cursor-pointer"
+            >
+              <FileDown className="w-4 h-4 text-slate-950" />
+              <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download Official PDF Quotation'}</span>
+            </button>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-8 space-y-6 text-slate-900 text-xs shadow-lg">
           {/* Proposal Letterhead */}
           <div className="flex justify-between items-start border-b-2 border-slate-200 pb-5">
             <div>
@@ -562,7 +691,9 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
             </div>
           </div>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
 };
+

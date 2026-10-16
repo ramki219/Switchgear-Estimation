@@ -238,6 +238,68 @@ export default function App() {
     setCurrentView('bom');
   };
 
+  const [selectedCADPanelId, setSelectedCADPanelId] = useState<number>(0);
+
+  const handleSelectProjectForSLD = (proj: Project, panelId?: number) => {
+    setActiveProject(proj);
+    const panels = storageService.getPanelsByProject(proj.projectID);
+    setActivePanels(panels);
+    setActiveQuotation(storageService.getQuotationByProject(proj.projectID));
+    setActiveBOM(storageService.generateBOMForProject(proj.projectID));
+    if (panelId) {
+      setSelectedCADPanelId(panelId);
+    } else if (panels.length > 0) {
+      setSelectedCADPanelId(panels[0].panelID);
+    }
+    setCurrentView('sld_studio');
+  };
+
+  const handleNavigateToSLD = (panelId?: number) => {
+    if (panelId) {
+      setSelectedCADPanelId(panelId);
+    } else if (activePanels.length > 0) {
+      setSelectedCADPanelId(activePanels[0].panelID);
+    }
+    setCurrentView('sld_studio');
+  };
+
+  const handleSyncSLDToPanels = (panelId: number, sldData: {
+    equipmentCost: number;
+    copperWeightKg: number;
+    enclosureCost: number;
+    labourHours: number;
+    feedersCount: number;
+    enclosureWidth: number;
+    enclosureHeight: number;
+    enclosureDepth: number;
+  }) => {
+    const copperRate = 42; // AED/kg
+    const labourRate = 85; // AED/hr
+    const newCopperCost = Math.round(sldData.copperWeightKg * copperRate);
+    const newLabourCost = Math.round(sldData.labourHours * labourRate);
+    const totalCost = sldData.equipmentCost + newCopperCost + sldData.enclosureCost + newLabourCost;
+
+    const existing = activePanels.find(p => p.panelID === panelId);
+    if (existing) {
+      const updatedPanel: EstimatePanel = {
+        ...existing,
+        equipmentCost: sldData.equipmentCost,
+        copperWeightKg: sldData.copperWeightKg,
+        copperCost: newCopperCost,
+        enclosureCost: sldData.enclosureCost,
+        labourHours: sldData.labourHours,
+        labourCost: newLabourCost,
+        totalPanelCost: totalCost,
+        enclosureWidth: sldData.enclosureWidth,
+        enclosureHeight: sldData.enclosureHeight,
+        enclosureDepth: sldData.enclosureDepth,
+      };
+
+      storageService.updatePanel(updatedPanel);
+      loadData();
+    }
+  };
+
   // Phase 2 Project CRUD
   const handleSaveProject = (projectData: any) => {
     if (projectData.projectID) {
@@ -513,7 +575,12 @@ export default function App() {
             <SLDStudioView
               catalogComponents={components}
               project={activeProject || undefined}
+              panels={activePanels}
+              activePanelId={selectedCADPanelId}
+              onSelectPanel={setSelectedCADPanelId}
+              onSyncPanelToProject={handleSyncSLDToPanels}
               onNavigateToCosting={() => setCurrentView('quotations')}
+              onBackToWorkspace={() => setCurrentView('workspace')}
             />
           )}
 
@@ -534,10 +601,7 @@ export default function App() {
               onSelectProjectForEstimation={handleSelectProjectForEstimation}
               onSelectProjectForQuotation={handleSelectProjectForQuotation}
               onSelectProjectForBOM={handleSelectProjectForBOM}
-              onSelectProjectForSLD={(p) => {
-                setActiveProject(p);
-                setCurrentView('sld_studio');
-              }}
+              onSelectProjectForSLD={(p) => handleSelectProjectForSLD(p)}
               onOpenNewProject={() => {
                 setProjectToEdit(null);
                 setIsProjectModalOpen(true);
@@ -560,7 +624,7 @@ export default function App() {
                 onBackToProjects={() => setCurrentView('projects')}
                 onNavigateToQuotation={handleSelectProjectForQuotation}
                 onNavigateToBOM={handleSelectProjectForBOM}
-                onNavigateToSLD={() => setCurrentView('sld_studio')}
+                onNavigateToSLD={handleNavigateToSLD}
                 onAddPanel={handleAddPanel}
                 onUpdatePanel={handleUpdatePanel}
                 onDeletePanel={handleDeletePanel}
@@ -611,6 +675,7 @@ export default function App() {
                 project={activeProject}
                 panels={activePanels}
                 quotation={activeQuotation}
+                company={company}
                 onBackToEstimation={() => setCurrentView('workspace')}
                 onSaveQuotation={handleSaveQuotation}
               />
@@ -679,7 +744,16 @@ export default function App() {
           )}
 
           {currentView === 'panel_types' && (
-            <PanelTypesView panelTypes={panelTypes} />
+            <PanelTypesView 
+              panelTypes={panelTypes} 
+              components={components}
+              onSelectComponent={(comp) => setSelectedComponentForDetail(comp)}
+              onOpenAddComponent={() => {
+                setComponentToEdit(null);
+                setIsComponentFormOpen(true);
+              }}
+              onRefreshData={loadData}
+            />
           )}
 
           {currentView === 'labour_rates' && (

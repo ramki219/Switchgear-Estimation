@@ -129,6 +129,34 @@ export const ComponentDetailModal: React.FC<ComponentDetailModalProps> = ({
           )}
         </div>
 
+        {/* Enclosure Physical Dimensions block if applicable */}
+        {(component.categoryID === 11 || component.isEnclosureSize || component.enclosureHeight) && (
+          <div className="bg-blue-950/40 border border-blue-800/60 rounded-lg p-4 font-mono text-xs space-y-2">
+            <h4 className="text-xs font-semibold text-blue-300 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-3.5 h-3.5 text-blue-400" />
+              <span>Enclosure Sizing & Cubicle Architecture</span>
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+              <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Overall Dimensions</span>
+                <span className="font-bold text-slate-100">{component.enclosureHeight || 2100}H × {component.enclosureWidth || 2400}W × {component.enclosureDepth || 800}D mm</span>
+              </div>
+              <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Columns / Tiers</span>
+                <span className="font-bold text-slate-100">{component.columns || 1} Cubicles</span>
+              </div>
+              <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Separation Form</span>
+                <span className="font-bold text-purple-300">{component.formOfSeparation || 'Form 2b'}</span>
+              </div>
+              <div className="bg-slate-950 p-2 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-400 block uppercase">Ingress Protection</span>
+                <span className="font-bold text-cyan-300">{component.ipRating || 'IP42'}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Technical Electrical Parameters */}
         <div>
           <h4 className="text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">

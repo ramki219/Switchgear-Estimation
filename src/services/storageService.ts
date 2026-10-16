@@ -66,7 +66,18 @@ class StorageService {
       this.saveManufacturers(INITIAL_MANUFACTURERS);
       return INITIAL_MANUFACTURERS;
     }
-    return JSON.parse(raw);
+    const stored: Manufacturer[] = JSON.parse(raw);
+    let changed = false;
+    for (const initMfg of INITIAL_MANUFACTURERS) {
+      if (!stored.some(m => m.manufacturerCode === initMfg.manufacturerCode)) {
+        stored.push(initMfg);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.saveManufacturers(stored);
+    }
+    return stored;
   }
 
   saveManufacturers(data: Manufacturer[]): void {
@@ -169,6 +180,16 @@ class StorageService {
       this.saveComponents(components);
     } else {
       components = JSON.parse(raw);
+      let changed = false;
+      for (const initC of INITIAL_COMPONENTS) {
+        if (!components.some(c => c.componentID === initC.componentID || c.componentCode === initC.componentCode)) {
+          components.push(initC);
+          changed = true;
+        }
+      }
+      if (changed) {
+        this.saveComponents(components);
+      }
     }
 
     // Attach current active prices
@@ -485,7 +506,18 @@ class StorageService {
       this.savePrices(INITIAL_PRICES);
       return INITIAL_PRICES;
     }
-    return JSON.parse(raw);
+    const stored: SupplierPrice[] = JSON.parse(raw);
+    let changed = false;
+    for (const initP of INITIAL_PRICES) {
+      if (!stored.some(p => p.supplierPriceID === initP.supplierPriceID)) {
+        stored.push(initP);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.savePrices(stored);
+    }
+    return stored;
   }
 
   savePrices(data: SupplierPrice[]): void {
@@ -773,6 +805,7 @@ class StorageService {
     const labourRates = this.getLabourRates();
 
     // 1. Calculate Copper Busbar Requirements
+    // Formula: Total Length x Density based on Dimensions x Current Copper Price + Labour Charges
     const busbarResult = calculateBusbarRequirements({
       incomerAmps: panel.incomerRating,
       widthMm: panel.enclosureWidth,
@@ -780,9 +813,22 @@ class StorageService {
       columns: panel.numberOfColumns,
       currentDensity: panel.busbarCurrentDensity || 1.5,
       copperRatePerKg: panel.copperBaseRatePerKg || 42.0,
+      manualWidthMm: panel.busbarWidthMm,
+      manualThicknessMm: panel.busbarThicknessMm,
+      manualRunsPerPhase: panel.busbarRunsPerPhase,
+      manualPhasesCount: panel.busbarPhasesCount,
+      manualTotalLengthMeters: panel.busbarTotalLengthMeters,
+      manualCopperDensity: panel.copperDensityKgDm3,
+      manualWeightKg: undefined, // Dynamically computed from Total Length x Density based on Dimensions
+      manualLabourHours: panel.busbarLabourHours,
+      manualLabourRatePerHour: panel.busbarLabourRatePerHour,
+      manualLabourCharges: panel.busbarLabourCost,
+      manualHardwareCost: panel.busbarHardwareCost,
+      isCustomBusbarCost: panel.isCustomBusbarCost,
+      customBusbarCost: panel.customBusbarCost,
     });
 
-    // 2. Calculate Sheet Metal Enclosure
+    // 2. Calculate Sheet Metal Enclosure (Standard Engineering Formula)
     const enclosureResult = calculateEnclosureCost({
       heightMm: panel.enclosureHeight,
       widthMm: panel.enclosureWidth,
@@ -792,6 +838,27 @@ class StorageService {
       ipRating: panel.ipRating,
       sheetMetalThicknessMm: panel.sheetMetalThickness || 2.0,
     });
+
+    // 2b. Determine Enclosure Cost (Component Catalogue vs Custom Price vs Calculated)
+    let finalEnclosureCost = enclosureResult.totalEnclosureCost;
+    if (panel.isCustomEnclosurePrice && typeof panel.customEnclosurePrice === 'number' && !isNaN(panel.customEnclosurePrice)) {
+      // User explicitly set custom price override
+      finalEnclosureCost = Number(panel.customEnclosurePrice.toFixed(2));
+    } else if (panel.enclosureSource === 'CATALOGUE') {
+      // User selected brand enclosure from Component Catalogue
+      if (typeof panel.catalogueEnclosurePrice === 'number' && !isNaN(panel.catalogueEnclosurePrice) && panel.catalogueEnclosurePrice > 0) {
+        finalEnclosureCost = Number(panel.catalogueEnclosurePrice.toFixed(2));
+      } else if (panel.enclosureComponentID) {
+        const compPrice = this.getPrices().find(p => p.componentID === panel.enclosureComponentID && p.isCurrent);
+        if (compPrice?.netPrice) {
+          finalEnclosureCost = compPrice.netPrice;
+        }
+      }
+    } else if (typeof panel.customEnclosurePrice === 'number' && !isNaN(panel.customEnclosurePrice) && panel.customEnclosurePrice > 0 && panel.isCustomEnclosurePrice) {
+      finalEnclosureCost = Number(panel.customEnclosurePrice.toFixed(2));
+    } else if (typeof panel.enclosureCost === 'number' && panel.enclosureCost > 0 && panel.enclosureSource === 'CUSTOM') {
+      finalEnclosureCost = panel.enclosureCost;
+    }
 
     // 3. Calculate Equipment Cost (Sum of all item lines)
     const equipmentCost = Number(panel.items.reduce((sum, item) => sum + (item.totalCost || 0), 0).toFixed(2));
@@ -806,15 +873,27 @@ class StorageService {
     });
 
     const totalPanelCost = Number(
-      (equipmentCost + busbarResult.totalBusbarCost + enclosureResult.totalEnclosureCost + labourResult.totalCost).toFixed(2)
+      (equipmentCost + busbarResult.totalBusbarCost + finalEnclosureCost + labourResult.totalCost).toFixed(2)
     );
 
     return {
       ...panel,
+      busbarWidthMm: busbarResult.widthMm,
+      busbarThicknessMm: busbarResult.thicknessMm,
+      busbarRunsPerPhase: busbarResult.runsPerPhase,
+      busbarPhasesCount: busbarResult.phasesCount,
+      busbarTotalLengthMeters: busbarResult.totalLengthMeters,
+      copperDensityKgDm3: busbarResult.copperDensity,
       copperCrossSectionMm2: busbarResult.crossSectionPerPhaseMm2,
       copperWeightKg: busbarResult.totalWeightKg,
+      copperBaseRatePerKg: busbarResult.copperBaseRate,
+      copperMaterialCost: busbarResult.copperCost,
+      busbarLabourHours: busbarResult.labourHours,
+      busbarLabourRatePerHour: busbarResult.labourRatePerHour,
+      busbarLabourCost: busbarResult.labourCharges,
+      busbarHardwareCost: busbarResult.hardwareAndSleevingCost,
       copperCost: busbarResult.totalBusbarCost,
-      enclosureCost: enclosureResult.totalEnclosureCost,
+      enclosureCost: finalEnclosureCost,
       equipmentCost,
       labourHours: labourResult.totalHours,
       labourCost: labourResult.totalCost,

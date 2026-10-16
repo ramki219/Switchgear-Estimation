@@ -268,7 +268,7 @@ export const BusbarCalculationView: React.FC<BusbarCalculationViewProps> = ({
           </div>
 
           <div className="text-[10px] text-slate-500 space-y-1 pt-2 border-t border-slate-200">
-            <div>• ETP Copper Density: 8,940 kg/m³</div>
+            <div>• ETP Copper Density: 8.96 kg/meter (Cu-ETP 99.9% purity)</div>
             <div>• Conductivity: 100% IACS (58 MS/m)</div>
             <div>• Maximum Permissible Temperature: 105°C (Bare) / 120°C (Tin-plated)</div>
           </div>

@@ -13,7 +13,7 @@ import {
   ATSConfiguration,
   ProjectRevisionRecord 
 } from '../../types/engineering';
-import { Component, Project } from '../../types';
+import { Component, Project, EstimatePanel } from '../../types';
 import { SLDEngine } from '../../services/sldEngine';
 import { PanelCADEngine } from '../../services/panelCADEngine';
 import { ATSEngineeringEngine } from '../../services/atsEngineeringEngine';
@@ -43,13 +43,28 @@ import {
   Printer,
   History,
   Send,
-  ArrowRight
+  ArrowRight,
+  ArrowLeft
 } from 'lucide-react';
 
 interface SLDStudioViewProps {
   catalogComponents: Component[];
   project?: Project;
+  panels?: EstimatePanel[];
+  activePanelId?: number;
+  onSelectPanel?: (panelId: number) => void;
+  onSyncPanelToProject?: (panelId: number, sldData: {
+    equipmentCost: number;
+    copperWeightKg: number;
+    enclosureCost: number;
+    labourHours: number;
+    feedersCount: number;
+    enclosureWidth: number;
+    enclosureHeight: number;
+    enclosureDepth: number;
+  }) => void;
   onNavigateToCosting?: () => void;
+  onBackToWorkspace?: () => void;
 }
 
 export type EngineeringStudioTab = 
@@ -67,12 +82,113 @@ export type EngineeringStudioTab =
 export const SLDStudioView: React.FC<SLDStudioViewProps> = ({
   catalogComponents,
   project,
+  panels,
+  activePanelId,
+  onSelectPanel,
+  onSyncPanelToProject,
   onNavigateToCosting,
+  onBackToWorkspace,
 }) => {
+  const [selectedPanelId, setSelectedPanelId] = useState<number>(() => {
+    if (activePanelId) return activePanelId;
+    if (panels && panels.length > 0) return panels[0].panelID;
+    return 0;
+  });
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState(false);
+
+  // Sync with activePanelId if prop changes
+  useEffect(() => {
+    if (activePanelId && activePanelId !== selectedPanelId) {
+      setSelectedPanelId(activePanelId);
+    }
+  }, [activePanelId]);
+
+  const activePanel = panels?.find(p => p.panelID === selectedPanelId);
+
   // SINGLE SOURCE OF TRUTH: SLD Topology
   const [topology, setTopology] = useState<SLDTopology>(() => {
-    return SLDEngine.createDemoTopology(catalogComponents);
+    const demo = SLDEngine.createDemoTopology(catalogComponents);
+    if (activePanel) {
+      demo.panelTag = activePanel.panelTag;
+    }
+    return demo;
   });
+
+  // Update topology panel tag when activePanel changes
+  useEffect(() => {
+    if (activePanel) {
+      setTopology(prev => ({
+        ...prev,
+        panelTag: activePanel.panelTag,
+        systemVoltage: 415,
+        frequency: 50,
+      }));
+    }
+  }, [selectedPanelId, activePanel]);
+
+  const handlePanelChange = (newId: number) => {
+    setSelectedPanelId(newId);
+    if (onSelectPanel) onSelectPanel(newId);
+  };
+
+  const handleSyncToProject = () => {
+    if (!onSyncPanelToProject || !selectedPanelId) return;
+    setIsSyncing(true);
+
+    // Calculate equipment cost from SLD topology breakers
+    let equipCost = 0;
+    
+    // Incomers
+    const incomers = topology.nodes.filter(n => n.type === 'ACB' || n.tag.includes('INCOMER'));
+    incomers.forEach(inc => {
+      const rating = inc.ratingA || 2500;
+      equipCost += rating >= 3200 ? 28500 : (rating >= 1600 ? 18500 : (rating >= 800 ? 8500 : 3200));
+    });
+
+    // Bus couplers
+    const busCouplers = topology.nodes.filter(n => n.type === 'BUS_COUPLER' || n.tag.includes('BC'));
+    busCouplers.forEach(bc => {
+      const rating = bc.ratingA || 2500;
+      equipCost += rating >= 3200 ? 24000 : 16000;
+    });
+
+    // Outgoings
+    const outgoings = topology.nodes.filter(n => n.type === 'MCCB' || n.type === 'MCB' || n.tag.startsWith('FDR'));
+    outgoings.forEach(outg => {
+      const r = outg.ratingA || 250;
+      equipCost += r >= 800 ? 6500 : (r >= 400 ? 3200 : (r >= 1600 ? 12000 : 850));
+    });
+
+    // Copper weight based on busbar and dimensions
+    const busbarAmp = topology.busSections && topology.busSections.length > 0 ? topology.busSections[0].ratingA : 2500;
+    const columnsCount = gaData.columns?.length || 4;
+    const estCopperKg = Math.round((busbarAmp / 1000) * columnsCount * 18.5);
+
+    // Enclosure cost based on dimensions
+    const encWidth = gaData.totalWidthMm || 2400;
+    const encHeight = gaData.totalHeightMm || 2000;
+    const encDepth = gaData.totalDepthMm || 800;
+    const encCost = Math.round((encWidth / 1000) * 3800 + 4500);
+
+    const estLabour = Math.max(24, Math.round(outgoings.length * 4.5 + columnsCount * 8));
+
+    onSyncPanelToProject(selectedPanelId, {
+      equipmentCost: equipCost,
+      copperWeightKg: estCopperKg,
+      enclosureCost: encCost,
+      labourHours: estLabour,
+      feedersCount: outgoings.length,
+      enclosureWidth: encWidth,
+      enclosureHeight: encHeight,
+      enclosureDepth: encDepth,
+    });
+
+    setSyncSuccess(true);
+    setTimeout(() => setSyncSuccess(false), 3500);
+    setIsSyncing(false);
+  };
 
   // Active sub-tab
   const [activeTab, setActiveTab] = useState<EngineeringStudioTab>('sld_editor');
@@ -171,6 +287,91 @@ OUTGOINGS:
 
   return (
     <div className="space-y-4 font-mono text-xs pb-12">
+      {/* Linked Project & Active Panel Contextual Strip */}
+      {project && (
+        <div className="bg-slate-900 text-white rounded-xl p-3.5 border border-slate-800 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {onBackToWorkspace && (
+              <button
+                onClick={onBackToWorkspace}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg transition cursor-pointer flex items-center gap-1 font-bold text-xs"
+                title="Back to Estimation Workspace"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Workspace</span>
+              </button>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-bold text-cyan-400 font-mono tracking-wider">
+                  LINKED PROJECT:
+                </span>
+                <span className="text-xs font-bold text-white">{project.projectName}</span>
+                <span className="text-[10px] text-slate-400 font-mono">({project.projectCode})</span>
+                <span className="text-[10px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded font-semibold">
+                  {project.authority}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 font-sans mt-0.5">
+                Client: <strong className="text-white">{project.clientName}</strong> · Estimator: {project.assignedEstimator || 'Lead Engineer'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 w-full md:w-auto justify-end flex-wrap">
+            {/* Panel Selector Dropdown */}
+            {panels && panels.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                <label className="text-[10px] text-slate-400 uppercase font-mono font-bold">Panel:</label>
+                <select
+                  value={selectedPanelId}
+                  onChange={(e) => handlePanelChange(Number(e.target.value))}
+                  className="bg-slate-900 border border-slate-600 text-cyan-300 rounded px-2 py-1 text-xs font-bold focus:border-cyan-400 outline-none cursor-pointer"
+                >
+                  {panels.map((p) => (
+                    <option key={p.panelID} value={p.panelID}>
+                      {p.panelTag} • {p.panelName.substring(0, 24)} ({p.incomerRating}A)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Sync with Project Estimate Button */}
+            {onSyncPanelToProject && selectedPanelId > 0 && (
+              <button
+                onClick={handleSyncToProject}
+                disabled={isSyncing}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                title="Push SLD breakers, busbars, and enclosure sizes to Project Estimate"
+              >
+                {syncSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                    <span>Synced to Project Estimate!</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>Sync to Project Estimate</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {onNavigateToCosting && (
+              <button
+                onClick={onNavigateToCosting}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition shadow-2xs"
+              >
+                <span>View Quotation</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Engineering Studio Header Banner */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>

@@ -213,6 +213,26 @@ export const ComponentsView: React.FC<ComponentsViewProps> = ({
               <span>Specs Filter</span>
             </button>
 
+            {/* Quick Enclosure / Panel Sizes Toggle */}
+            <button
+              onClick={() => {
+                if (selectedCategory === '11') {
+                  setSelectedCategory('ALL');
+                } else {
+                  setSelectedCategory('11');
+                }
+                setCurrentPage(1);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors shadow-2xs ${
+                selectedCategory === '11'
+                  ? 'bg-blue-600 text-white font-bold'
+                  : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
+              }`}
+              title="Filter by brand panel enclosures (Alfanar, RR, ABB, Schneider, Siemens, Rittal)"
+            >
+              <span>Panel Sizes & Enclosures</span>
+            </button>
+
             {/* Import Excel / CSV button */}
             <button
               onClick={onOpenImport}
@@ -414,25 +434,42 @@ export const ComponentsView: React.FC<ComponentsViewProps> = ({
                       </div>
                     </td>
 
-                    {/* Electrical Ratings Badges */}
+                    {/* Electrical Ratings Badges or Enclosure Dimensions */}
                     <td className="py-3 px-4 font-mono">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {c.ratedCurrent && (
-                          <Badge variant="info">{c.ratedCurrent}A</Badge>
-                        )}
-                        {c.ratedVoltage && (
-                          <Badge variant="default">{c.ratedVoltage}V</Badge>
-                        )}
-                        {c.poles && (
-                          <Badge variant="default">{c.poles}P</Badge>
-                        )}
-                        {c.breakingCapacity && (
-                          <Badge variant="warning">{c.breakingCapacity}kA</Badge>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        {c.iecStandard || 'IEC 60947-2'} • {c.ipRating || 'IP20'}
-                      </div>
+                      {c.categoryID === 11 || c.isEnclosureSize || c.enclosureHeight ? (
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="blue">
+                              {c.enclosureHeight || 2100}H × {c.enclosureWidth || 2400}W × {c.enclosureDepth || 800}D mm
+                            </Badge>
+                            {c.columns && <Badge variant="purple">{c.columns} Col{c.columns > 1 ? 's' : ''}</Badge>}
+                            {c.ratedCurrent && <Badge variant="info">{c.ratedCurrent}A</Badge>}
+                          </div>
+                          <div className="text-[10px] text-slate-600 mt-1">
+                            {c.formOfSeparation || 'Form 2b'} • {c.ipRating || 'IP42'} • {c.mountingType || 'Floor Standing'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {c.ratedCurrent && (
+                              <Badge variant="info">{c.ratedCurrent}A</Badge>
+                            )}
+                            {c.ratedVoltage && (
+                              <Badge variant="default">{c.ratedVoltage}V</Badge>
+                            )}
+                            {c.poles && (
+                              <Badge variant="default">{c.poles}P</Badge>
+                            )}
+                            {c.breakingCapacity && (
+                              <Badge variant="warning">{c.breakingCapacity}kA</Badge>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {c.iecStandard || 'IEC 60947-2'} • {c.ipRating || 'IP20'}
+                          </div>
+                        </div>
+                      )}
                     </td>
 
                     {/* Current Net Buying Rate */}
