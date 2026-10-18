@@ -83,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50';
   };
 
-  const isPlatformAdmin = currentUser?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
+  const isPlatformAdmin = (currentUser as any)?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
   const maxProjects = currentCompany?.maxProjects || (currentCompany?.plan === 'TRIAL' ? 2 : currentCompany?.plan === 'STARTER' ? 10 : currentCompany?.plan === 'PROFESSIONAL' ? 50 : currentCompany?.plan === 'ADVANCED' ? 200 : 1000);
 
   return (

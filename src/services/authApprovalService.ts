@@ -63,11 +63,17 @@ export interface PlatformPaymentSettings {
   bankName: string;
   iban: string;
   swiftCode: string;
+  swiftBic?: string;
   vatTrn: string;
   supportEmail: string;
   supportPhone: string;
   requireAdminApprovalOnSignup: boolean;
   defaultTrialProjectsLimit: number;
+  trialProjectLimit?: number;
+  stripeStarterUrl?: string;
+  stripeProfessionalUrl?: string;
+  stripeAdvancedUrl?: string;
+  stripeBusinessUrl?: string;
   stripeLinks: {
     STARTER_MONTHLY: string;
     STARTER_ANNUAL: string;
@@ -86,6 +92,7 @@ export const PLAN_LIMITS: Record<SaaSPlan, { priceMonthly: number; priceAnnual: 
   PROFESSIONAL: { priceMonthly: 499, priceAnnual: 4990, maxProjects: 50, maxUsers: 5 },
   ADVANCED: { priceMonthly: 999, priceAnnual: 9990, maxProjects: 200, maxUsers: 15 },
   BUSINESS: { priceMonthly: 1999, priceAnnual: 19990, maxProjects: 1000, maxUsers: 50 },
+  ENTERPRISE: { priceMonthly: 4999, priceAnnual: 49990, maxProjects: 9999, maxUsers: 250 },
 };
 
 const STORAGE_KEYS = {
@@ -100,11 +107,17 @@ const DEFAULT_PAYMENT_SETTINGS: PlatformPaymentSettings = {
   bankName: 'Emirates NBD Bank PJSC (Dubai)',
   iban: 'AE29 0331 2345 6789 0123 456',
   swiftCode: 'EBILAEADXXX',
+  swiftBic: 'EBILAEADXXX',
   vatTrn: '100234567800003',
   supportEmail: 'billing@lvestimator.ae',
   supportPhone: '+971 4 345 6789',
   requireAdminApprovalOnSignup: false,
   defaultTrialProjectsLimit: 2,
+  trialProjectLimit: 2,
+  stripeStarterUrl: '',
+  stripeProfessionalUrl: '',
+  stripeAdvancedUrl: '',
+  stripeBusinessUrl: '',
   stripeLinks: {
     STARTER_MONTHLY: '',
     STARTER_ANNUAL: '',
@@ -376,14 +389,28 @@ class AuthApprovalService {
       return DEFAULT_PAYMENT_SETTINGS;
     }
     try {
-      return { ...DEFAULT_PAYMENT_SETTINGS, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      return { 
+        ...DEFAULT_PAYMENT_SETTINGS, 
+        ...parsed,
+        swiftBic: parsed.swiftBic || parsed.swiftCode || DEFAULT_PAYMENT_SETTINGS.swiftBic,
+        trialProjectLimit: parsed.trialProjectLimit || parsed.defaultTrialProjectsLimit || DEFAULT_PAYMENT_SETTINGS.trialProjectLimit,
+      };
     } catch {
       return DEFAULT_PAYMENT_SETTINGS;
     }
   }
 
-  savePaymentSettings(settings: PlatformPaymentSettings): void {
-    localStorage.setItem(STORAGE_KEYS.PLATFORM_PAYMENT_SETTINGS, JSON.stringify(settings));
+  savePaymentSettings(settings: PlatformPaymentSettings): PlatformPaymentSettings {
+    const updated: PlatformPaymentSettings = {
+      ...settings,
+      swiftCode: settings.swiftCode || settings.swiftBic || '',
+      swiftBic: settings.swiftBic || settings.swiftCode || '',
+      defaultTrialProjectsLimit: settings.defaultTrialProjectsLimit || settings.trialProjectLimit || 2,
+      trialProjectLimit: settings.trialProjectLimit || settings.defaultTrialProjectsLimit || 2,
+    };
+    localStorage.setItem(STORAGE_KEYS.PLATFORM_PAYMENT_SETTINGS, JSON.stringify(updated));
+    return updated;
   }
 
   // --- CLIENT COMPANIES ---
@@ -678,6 +705,75 @@ class AuthApprovalService {
     };
   }
 
+  // Register user signup helper
+  registerUserSignup(
+    emailOrObj: string | {
+      email: string;
+      fullName: string;
+      password?: string;
+      phone?: string;
+      companyId?: string;
+      companyName?: string;
+      role?: UserRole;
+    },
+    fullNameArg?: string,
+    companyNameArg?: string,
+    roleArg: UserRole = 'COMPANY_OWNER',
+    passwordArg?: string,
+    companyCodeArg?: string
+  ): AppUserProfile {
+    let email: string;
+    let fullName: string;
+    let companyName: string | undefined;
+    let role: UserRole = 'COMPANY_OWNER';
+    let password = 'Client@2026';
+    let companyId: string | undefined;
+    let phone: string | undefined;
+
+    if (typeof emailOrObj === 'string') {
+      email = emailOrObj.toLowerCase().trim();
+      fullName = (fullNameArg || email).trim();
+      companyName = companyNameArg;
+      role = roleArg;
+      password = passwordArg || 'Client@2026';
+      companyId = companyCodeArg;
+    } else {
+      email = emailOrObj.email.toLowerCase().trim();
+      fullName = emailOrObj.fullName.trim();
+      companyName = emailOrObj.companyName;
+      role = emailOrObj.role || 'COMPANY_OWNER';
+      password = emailOrObj.password || 'Client@2026';
+      companyId = emailOrObj.companyId;
+      phone = emailOrObj.phone;
+    }
+
+    const users = this.getUsers();
+    const existing = users.find(u => u.email.toLowerCase() === email);
+    if (existing) {
+      return existing;
+    }
+
+    const newUser: AppUserProfile = {
+      uid: `usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+      email,
+      password,
+      fullName,
+      phone,
+      role,
+      saasRole: role as any,
+      companyId,
+      companyName,
+      approved: true,
+      createdAt: new Date().toISOString(),
+      approvedAt: new Date().toISOString(),
+      approvedBy: 'Platform Admin',
+    };
+    users.push(newUser);
+    this.saveUsers(users);
+    this.syncUserToFirestore(newUser);
+    return newUser;
+  }
+
   // Update plan and quota from Admin Dashboard
   updateCompanyPlanAndQuota(
     companyId: string,
@@ -735,16 +831,48 @@ class AuthApprovalService {
   }
 
   // Customer submits payment reference (Bank Transfer or Stripe) for plan upgrade
-  submitPaymentUpgradeRequest(params: {
-    companyCode: string;
-    companyEmail?: string;
-    requestedPlan: SaaSPlan;
-    billingCycle: 'MONTHLY' | 'ANNUAL';
-    paymentMethod: 'card' | 'bank_transfer';
-    paymentReference: string;
-    autoActivate?: boolean;
-  }): RegisteredClientCompany | null {
+  submitPaymentUpgradeRequest(
+    paramsOrCompanyCode: string | {
+      companyCode: string;
+      companyEmail?: string;
+      requestedPlan: SaaSPlan;
+      billingCycle?: 'MONTHLY' | 'ANNUAL';
+      paymentMethod?: 'card' | 'bank_transfer';
+      paymentReference: string;
+      autoActivate?: boolean;
+    },
+    planArg?: SaaSPlan,
+    paymentRefArg?: string,
+    billingCycleArg: 'MONTHLY' | 'ANNUAL' = 'MONTHLY'
+  ): RegisteredClientCompany | null {
     const list = this.getClientCompanies();
+    let params: {
+      companyCode: string;
+      companyEmail?: string;
+      requestedPlan: SaaSPlan;
+      billingCycle: 'MONTHLY' | 'ANNUAL';
+      paymentMethod: 'card' | 'bank_transfer';
+      paymentReference: string;
+      autoActivate?: boolean;
+    };
+
+    if (typeof paramsOrCompanyCode === 'string') {
+      params = {
+        companyCode: paramsOrCompanyCode,
+        requestedPlan: planArg || 'PROFESSIONAL',
+        billingCycle: billingCycleArg,
+        paymentMethod: 'bank_transfer',
+        paymentReference: paymentRefArg || 'BANK-TRANSFER-PENDING',
+        autoActivate: false,
+      };
+    } else {
+      params = {
+        ...paramsOrCompanyCode,
+        billingCycle: paramsOrCompanyCode.billingCycle || 'MONTHLY',
+        paymentMethod: paramsOrCompanyCode.paymentMethod || 'bank_transfer',
+      };
+    }
+
     let idx = list.findIndex(
       c => c.companyCode === params.companyCode || (params.companyEmail && c.email.toLowerCase() === params.companyEmail.toLowerCase())
     );

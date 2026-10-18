@@ -124,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const current = titles[currentView] || { title: 'LV Switchgear Estimator', subtitle: '' };
-  const isPlatformAdmin = currentUser?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
+  const isPlatformAdmin = (currentUser as any)?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-xs">

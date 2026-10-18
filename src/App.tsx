@@ -207,7 +207,7 @@ export default function App() {
         subscriptionStatus: matched.requestedPlan
           ? 'PENDING_APPROVAL'
           : matched.plan === 'TRIAL'
-          ? 'TRIALING'
+          ? 'TRIAL'
           : 'ACTIVE',
       };
       localStorage.setItem('switchgear_saas_company', JSON.stringify(updated));

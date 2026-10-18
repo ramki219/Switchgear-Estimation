@@ -642,7 +642,7 @@ export interface ValueEngineeringOption {
 // SAAS MULTI-TENANCY, SUBSCRIPTIONS & PRODUCTION HANDOVER TYPES
 // ============================================================================
 
-export type SaaSPlan = 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS';
+export type SaaSPlan = 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS' | 'ENTERPRISE';
 
 export type SaaSRole = 
   | 'PLATFORM_ADMIN' 
@@ -652,6 +652,18 @@ export type SaaSRole =
   | 'PURCHASE_OFFICER' 
   | 'PRODUCTION_USER' 
   | 'READ_ONLY';
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName?: string;
+  fullName?: string;
+  role?: string;
+  saasRole?: SaaSRole;
+  companyId?: string | number;
+  companyName?: string;
+  approved?: boolean;
+}
 
 export interface CompanyTenant {
   id: number;
@@ -669,7 +681,7 @@ export interface CompanyTenant {
   defaultMarginPercent: number;
   defaultVatPercent: number;
   plan: SaaSPlan;
-  subscriptionStatus: 'TRIAL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'PAST_DUE' | 'CANCELLED';
+  subscriptionStatus: 'TRIAL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'PAST_DUE' | 'CANCELLED' | 'TRIALING';
   trialEndsAt?: string;
   maxProjects?: number;
   maxUsers?: number;
