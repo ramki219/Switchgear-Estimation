@@ -1,0 +1,747 @@
+export interface Manufacturer {
+  manufacturerID: number;
+  manufacturerCode: string;
+  manufacturerName: string;
+  country?: string;
+  website?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ComponentCategory {
+  categoryID: number;
+  categoryCode: string;
+  categoryName: string;
+  parentCategoryID?: number;
+  description?: string;
+  defaultIECStandard?: string;
+  isActive: boolean;
+}
+
+export interface ComponentSpecification {
+  specificationID: number;
+  componentID: number;
+  specificationName: string;
+  specificationValue: string;
+  unit?: string;
+}
+
+export interface Component {
+  componentID: number;
+  componentCode: string;
+  componentName: string;
+  categoryID: number;
+  categoryName?: string;
+  manufacturerID: number;
+  manufacturerName?: string;
+  manufacturerCode?: string;
+  partNumber: string;
+  model?: string;
+  description?: string;
+  unit: string;
+  ratedVoltage?: number;
+  ratedCurrent?: number;
+  poles?: number;
+  breakingCapacity?: number; // kA
+  frequency?: number;
+  ipRating?: string;
+  mountingType?: string;
+  iecStandard?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  specifications?: ComponentSpecification[];
+  currentPrice?: SupplierPrice;
+  // Enclosure sizing parameters if category is ENCLOSURE
+  enclosureHeight?: number; // mm
+  enclosureWidth?: number; // mm
+  enclosureDepth?: number; // mm
+  columns?: number;
+  formOfSeparation?: string;
+  sheetMetalThickness?: number;
+  isEnclosureSize?: boolean;
+}
+
+export interface Supplier {
+  supplierID: number;
+  supplierCode: string;
+  supplierName: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country: string;
+  currency: string;
+  paymentTerms: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface SupplierPrice {
+  supplierPriceID: number;
+  componentID: number;
+  componentName?: string;
+  componentCode?: string;
+  partNumber?: string;
+  manufacturerName?: string;
+  supplierID: number;
+  supplierName?: string;
+  supplierPartNumber?: string;
+  currency: string;
+  listPrice: number;
+  discountPercent: number;
+  netPrice: number; // Computed: listPrice * (1 - discountPercent / 100)
+  minimumQuantity: number;
+  leadTimeDays?: number;
+  priceDate: string;
+  validUntil?: string;
+  quotationReference?: string;
+  notes?: string;
+  isCurrent: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface PanelType {
+  panelTypeID: number;
+  panelTypeCode: string;
+  panelTypeName: string;
+  description?: string;
+  defaultFormOfSeparation: string;
+  defaultIPRating: string;
+  complianceTag?: string;
+  isActive: boolean;
+}
+
+export interface LabourRate {
+  labourRateID: number;
+  activityCode: string;
+  activityName: string;
+  category: string;
+  ratePerHour: number;
+  currency: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  isActive: boolean;
+}
+
+export interface AuditLogEntry {
+  auditID: number;
+  userID: string;
+  tableName: string;
+  recordID: string;
+  action: 'INSERT_PRICE' | 'PRICE_REVISION' | 'CREATE_COMPONENT' | 'UPDATE_COMPONENT' | 'DELETE_COMPONENT' | 'CREATE_SUPPLIER' | 'UPDATE_SUPPLIER' | 'CREATE_MANUFACTURER' | 'CREATE_CATEGORY' | 'BULK_IMPORT_COMPONENTS';
+  oldValue?: string;
+  newValue?: string;
+  createdAt: string;
+}
+
+export interface DashboardMetrics {
+  totalComponents: number;
+  activeComponents: number;
+  totalManufacturers: number;
+  totalSuppliers: number;
+  currentPriceRecords: number;
+  historicalPriceRecords: number;
+  totalProjects?: number;
+  activePanels?: number;
+  totalEstimatesValue?: number;
+}
+
+// ==========================================
+// PHASE 2 ESTIMATION & COSTING SYSTEM TYPES
+// ==========================================
+
+export type ProjectStatus = 'DRAFT' | 'IN_ESTIMATION' | 'ESTIMATED' | 'QUOTED' | 'WON' | 'LOST';
+
+export interface Project {
+  projectID: number;
+  projectCode: string;
+  projectName: string;
+  clientName: string;
+  clientID?: number;
+  consultantName?: string;
+  location: string;
+  authority: string; // DEWA, SEWA, FEWA, Kahramaa, ADDC, IEC Standard
+  status: ProjectStatus;
+  tenderStage?: 'INTAKE' | 'SLD_REVIEW' | 'ENGINEERING' | 'COMMERCIAL_REVIEW' | 'SUBMITTED' | 'AWARDED' | 'LOST';
+  createdDate: string;
+  dueDate: string;
+  currency: string;
+  assignedEstimator: string;
+  salesperson?: string; // Opportunity sales lead
+  rfqReference?: string;
+  rfqReceivedDate?: string;
+  projectCategory?: string; // Commercial, Residential, Industrial, Infrastructure, Healthcare
+  notes?: string;
+  panelsCount?: number;
+  totalCost?: number;
+  sellingPrice?: number;
+  targetMarginPercent?: number;
+  primaryOEM?: string;
+  copperRatePerKg?: number;
+}
+
+export type CableEntryType = 'TOP' | 'BOTTOM' | 'BOTH';
+
+export interface EstimateItem {
+  itemID: number;
+  panelID: number;
+  componentID?: number;
+  circuitTag: string; // e.g. "INCOMER-1", "FEEDER-01", "APFC-STEP-1"
+  description: string;
+  categoryCode?: string;
+  manufacturerCode?: string;
+  partNumber: string;
+  rating?: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  totalCost: number; // quantity * unitCost
+  supplierName?: string;
+  isAuxiliary?: boolean;
+}
+
+export interface PanelLabourHour {
+  activityCode: string;
+  activityName: string;
+  category: string;
+  hours: number;
+  ratePerHour: number;
+  totalCost: number;
+}
+
+export interface EstimatePanel {
+  panelID: number;
+  projectID: number;
+  panelTag: string; // e.g. "MDB-01", "SMDB-GF", "APFC-01", "MCC-PUMPS"
+  panelName: string;
+  panelTypeID: number;
+  panelTypeCode: string; // MDB, SMDB, APFC, MCC, ATS, DB
+  incomerRating: number; // Amps: e.g. 2500, 1600, 400
+  ratedVoltage: number; // 415V
+  shortCircuitRating: number; // kA, e.g. 50, 65
+  formOfSeparation: string; // "Form 2b", "Form 3b", "Form 4b Type 6", "Form 4b Type 7"
+  ipRating: string; // "IP42", "IP54", "IP65"
+  cableEntry: CableEntryType;
+  
+  // Copper Busbar Parameters (Total Length x Density based on Dimensions x Copper Price + Labour Charges)
+  busbarCurrentDensity?: number; // A/mm2, e.g. 1.5
+  busbarWidthMm?: number; // Width of busbar bar in mm (e.g. 50, 80, 100)
+  busbarThicknessMm?: number; // Thickness of busbar bar in mm (e.g. 5, 10)
+  busbarRunsPerPhase?: number; // Runs/bars per phase (e.g. 1, 2, 3, 4)
+  busbarPhasesCount?: number; // Number of conductors (e.g. 4 for 3P+N, 5 for 3P+N+PE)
+  busbarTotalLengthMeters?: number; // Total length of busbar used per panel in meters
+  copperDensityKgDm3?: number; // Density constant of copper in kg/meter, default 0.00896 kg/meter
+  copperCrossSectionMm2: number; // Cross section per phase in mm2
+  copperWeightKg: number; // Total copper weight in kg
+  copperBaseRatePerKg: number; // Current copper price manually applied (AED/kg)
+  copperMaterialCost?: number; // Total copper material cost in AED
+  busbarLabourHours?: number; // Provision for busbar fabrication labour hours
+  busbarLabourRatePerHour?: number; // Busbar fabrication labour rate per hour (AED/hr)
+  busbarLabourCost?: number; // Provision for busbar labour charges in AED
+  busbarHardwareCost?: number; // Insulators, hardware, and heat-shrink sleeving in AED
+  isCustomBusbarCost?: boolean; // Flag if estimator manually overrides busbar cost
+  customBusbarCost?: number; // Manually entered custom busbar cost in AED
+  copperCost: number; // Total cost of the busbar (Material + Labour + Hardware)
+  
+  // Enclosure Parameters
+  enclosureHeight: number; // mm, e.g. 2100
+  enclosureWidth: number; // mm, e.g. 3200
+  enclosureDepth: number; // mm, e.g. 800
+  numberOfColumns: number;
+  sheetMetalThickness: number; // mm, e.g. 2.0
+  enclosureCost: number; // computed or database cost
+
+  // Enclosure Brand Catalogue & Custom Pricing
+  enclosureSource?: 'CATALOGUE' | 'CUSTOM' | 'CALCULATED';
+  enclosureBrand?: string; // e.g. 'Alfanar', 'RR Global', 'ABB', 'Schneider', 'Siemens', 'Rittal'
+  enclosureModel?: string; // e.g. 'Alfanar Prominence Form 4b MDB 2500A'
+  enclosureComponentID?: number;
+  enclosurePartNumber?: string;
+  isCustomEnclosurePrice?: boolean;
+  customEnclosurePrice?: number;
+  catalogueEnclosurePrice?: number;
+
+  // Equipment & Labour Summary
+  equipmentCost: number; // sum of items totalCost
+  labourHours: number;
+  labourCost: number;
+  totalPanelCost: number; // equipmentCost + copperCost + enclosureCost + labourCost
+  
+  // Child Items & Labour details
+  items: EstimateItem[];
+  labourHoursDetail?: PanelLabourHour[];
+}
+
+export type AssemblyCategory = 'ATS' | 'CAPACITOR_BANK' | 'MOTOR_STARTER' | 'SMDB' | 'DB' | 'METER_CABINET';
+
+export interface PredefinedAssemblyItem {
+  circuitTag: string;
+  description: string;
+  categoryCode?: string;
+  manufacturerCode?: string;
+  partNumber: string;
+  rating?: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  totalCost: number;
+  componentID?: number;
+}
+
+export interface PredefinedAssembly {
+  id: string; // e.g. "STD-ATS-400A", "STD-MC-CT-400"
+  code: string;
+  name: string;
+  category: AssemblyCategory;
+  rating: string; // e.g. "400A 4P", "150 kvar", "45 kW Star-Delta", "400A CT Metering"
+  description: string;
+  incomerRating: number;
+  panelTypeCode: string; // ATS, APFC, MCC, SMDB, DB, METER_CABINET
+  ratedVoltage: number; // 415V
+  shortCircuitRating: number; // kA: 35, 50, 65
+  formOfSeparation: string; // "Form 2b", "Form 3b", "Form 4b Type 6"
+  ipRating: string; // "IP42", "IP54", "IP55", "IP65"
+  enclosureDimensions: string; // e.g. "2000 x 800 x 600 mm"
+  enclosureBrand: string;
+  primaryOEM: string; // "ABB", "SCHNEIDER", "SIEMENS"
+  authorityCompliance: string[]; // ["DEWA", "ADDC", "SEWA"]
+  
+  // Costing & Ready Final Prices in AED
+  equipmentCost: number;
+  copperCost: number;
+  enclosureCost: number;
+  labourCost: number;
+  labourHours: number;
+  totalDirectCost: number;
+  overheadPercent: number; // e.g. 8%
+  profitMarginPercent: number; // e.g. 15%
+  readyFinalPrice: number; // Final Selling Price in AED
+  
+  // Physical parameters
+  copperWeightKg: number;
+  enclosureHeight: number;
+  enclosureWidth: number;
+  enclosureDepth: number;
+  numberOfColumns: number;
+  cableEntry: CableEntryType;
+  leadTimeWeeks: number;
+
+  // Included items in this standard fixed design
+  items: PredefinedAssemblyItem[];
+}
+
+export interface Quotation {
+  quotationID: number;
+  quotationNumber: string; // e.g. "QT-2026-084-R0"
+  projectID: number;
+  projectCode: string;
+  projectName: string;
+  clientName: string;
+  revisionNumber: string; // "R0", "R1", "R2"
+  quotationDate: string;
+  validityDays: number;
+  currency: string;
+  
+  // Cost breakdown
+  totalEquipmentCost: number;
+  totalCopperCost: number;
+  totalEnclosureCost: number;
+  totalLabourCost: number;
+  totalDirectCost: number;
+
+  // Commercial Margins
+  overheadPercent: number; // e.g. 8%
+  overheadAmount: number;
+  profitMarginPercent: number; // e.g. 15%
+  profitMarginAmount: number;
+  subtotalBeforeTax: number;
+  taxPercent: number; // e.g. 5% VAT
+  taxAmount: number;
+  grandTotal: number;
+
+  // Commercial Terms
+  paymentTerms: string;
+  deliveryPeriodWeeks: number;
+  warrantyMonths: number;
+  inclusions: string[];
+  exclusions: string[];
+  status: 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'REVISED';
+
+  // Commercial Intelligence & Workflow Linkage
+  salesperson?: string; // Responsible sales owner
+  estimator?: string; // Responsible estimation engineer
+  rfqReference?: string;
+  rfqReceivedDate?: string;
+  estimationAssignedDate?: string;
+  quotationPreparedDate?: string;
+  quotationSubmittedDate?: string;
+  expectedPoDate?: string;
+  lastFollowUpDate?: string;
+  nextFollowUpDate?: string;
+  winProbabilityPercent?: number; // 0 to 100
+  lostReason?: string;
+  linkedPoId?: number;
+  linkedPoStatus?: PurchaseOrderStatus;
+  linkedPoNumber?: string;
+  verifiedPoValue?: number;
+}
+
+// ==========================================
+// COMMERCIAL ORDER BOOKING & PO TYPES
+// ==========================================
+
+export type PurchaseOrderStatus = 'DRAFT' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED' | 'CANCELLED';
+
+export interface POAuditEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  user: string;
+  oldValue?: string;
+  newValue?: string;
+  details?: string;
+}
+
+export interface PurchaseOrder {
+  poID: number;
+  poNumber: string; // Customer PO Reference
+  quotationID: number;
+  quotationNumber: string;
+  revisionNumber: string; // Linked revision (e.g. "R0", "R1")
+  projectID: number;
+  projectCode: string;
+  projectName: string;
+  clientName: string;
+  salesperson: string; // Sales owner who closed the order
+  estimator?: string; // Estimator who configured the technical quote
+  poReceivedDate: string; // ISO date YYYY-MM-DD
+  poValueExVat: number; // Manually entered verified PO value (AED, ex VAT)
+  vatPercent: number; // 5% UAE VAT
+  vatAmount: number;
+  poValueIncVat: number; // PO Value including VAT
+  currency: string; // 'AED' default
+  status: PurchaseOrderStatus;
+  isPartialPO?: boolean;
+  partialPONote?: string;
+  poDocumentRef?: string; // Attached PO file reference
+  remarks?: string;
+  enteredBy: string;
+  verifiedBy?: string;
+  verificationDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  auditHistory?: POAuditEntry[];
+}
+
+export type FollowUpCategory = 
+  | 'DUE_TODAY' 
+  | 'OVERDUE' 
+  | 'DUE_SOON' 
+  | 'AWAITING_CUSTOMER' 
+  | 'EXPECTED_PO_OVERDUE' 
+  | 'NO_FOLLOWUP_SCHEDULED';
+
+export interface FollowUpActivity {
+  id: number;
+  quotationID: number;
+  quotationNumber: string;
+  projectID: number;
+  clientName: string;
+  projectName: string;
+  date: string;
+  salesperson: string;
+  contactPerson?: string;
+  channel: 'PHONE' | 'EMAIL' | 'MEETING' | 'SITE_VISIT' | 'WHATSAPP';
+  notes: string;
+  nextActionDate?: string;
+  nextActionNotes?: string;
+  statusUpdate?: string;
+  createdAt: string;
+}
+
+export interface CommercialFilters {
+  dateRange: 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
+  startDate?: string;
+  endDate?: string;
+  salesperson: string; // 'ALL' or specific name
+  estimator: string; // 'ALL' or specific name
+  customer: string; // 'ALL' or specific customer
+  quotationStatus: string; // 'ALL', 'DRAFT', 'SUBMITTED', 'ACCEPTED', 'REJECTED'
+  orderStatus: string; // 'ALL', 'VERIFIED', 'DRAFT', 'CANCELLED', 'NO_PO'
+  projectCategory: string; // 'ALL', 'DEWA', 'ADDC', 'SEWA', 'COMMERCIAL', 'RESIDENTIAL', 'INDUSTRIAL'
+  searchQuery: string;
+}
+
+export interface SalespersonPerformance {
+  name: string;
+  rfqCount: number;
+  quotationsSubmitted: number;
+  totalQuotedValue: number;
+  opportunitiesWon: number;
+  poCount: number;
+  totalVerifiedPoValue: number;
+  openPipelineValue: number;
+  lostOpportunityValue: number;
+  conversionRatePercent: number;
+  averageOrderValue: number;
+  followUpsPending: number;
+  overdueFollowUps: number;
+  salesTargetAed: number;
+  targetProgressPercent: number;
+  monthlyWonValue: { month: string; amount: number }[];
+}
+
+export interface EstimatorPerformance {
+  name: string;
+  rfqsAssigned: number;
+  quotationsPrepared: number;
+  quotationsSubmitted: number;
+  totalQuotedValuePrepared: number;
+  totalQuotedValueSubmitted: number;
+  avgPreparationTimeDays: number;
+  pendingEstimation: number;
+  pendingInternalApproval: number;
+  awaitingSubmission: number;
+  revisionCount: number;
+  wonQuotationCount: number;
+  associatedPoValue: number;
+  winRatePercent: number;
+  monthlyProductivity: { month: string; count: number; value: number }[];
+}
+
+export interface ConsolidatedBOMItem {
+  id: string;
+  partNumber: string;
+  description: string;
+  category: string;
+  manufacturer: string;
+  totalQuantity: number;
+  unit: string;
+  unitRate: number;
+  extendedCost: number;
+  usedInPanels: string[];
+}
+
+export interface ImportedComponentRow {
+  componentCode?: string;
+  partNumber: string;
+  componentName: string;
+  categoryName: string;
+  manufacturerName: string;
+  model?: string;
+  description?: string;
+  unit?: string;
+  ratedCurrent?: number;
+  ratedVoltage?: number;
+  poles?: number;
+  breakingCapacity?: number;
+  ipRating?: string;
+  mountingType?: string;
+  iecStandard?: string;
+  frequency?: number;
+  // Optional initial pricing
+  supplierName?: string;
+  currency?: string;
+  listPrice?: number;
+  discountPercent?: number;
+  quotationReference?: string;
+}
+
+export interface ImportedPanelSizeRow {
+  brand: string; // e.g. "Alfanar", "RR Global", "ABB", "Schneider", "Siemens", "Rittal"
+  partNumber: string; // e.g. "ALF-PRM-2500-4B6"
+  modelName: string; // e.g. "Alfanar Prominence Form 4b MDB 2500A"
+  panelTypeCode?: string; // "MDB", "SMDB", "APFC", "MCC", "ATS", "DB"
+  enclosureHeight: number; // mm
+  enclosureWidth: number; // mm
+  enclosureDepth: number; // mm
+  columns?: number;
+  formOfSeparation?: string; // "Form 4b Type 6", "Form 2b", etc.
+  ipRating?: string; // "IP42", "IP54", "IP65"
+  incomerRating?: number; // Amps: e.g. 2500, 630
+  mountingType?: string; // "Floor Standing", "Wall Mounted"
+  sheetMetalThickness?: number; // mm, default 2.0
+  iecStandard?: string; // "IEC 61439-1/2"
+  description?: string;
+  // Commercial pricing
+  netPrice: number; // Listed Database Price (AED)
+  listPrice?: number;
+  discountPercent?: number;
+  supplierName?: string;
+  currency?: string;
+  quotationReference?: string;
+  leadTimeDays?: number;
+}
+
+export interface BulkImportOptions {
+  updateExisting: boolean;
+  autoCreateCategory: boolean;
+  autoCreateManufacturer: boolean;
+  autoCreateSupplier: boolean;
+  importPricing: boolean;
+}
+
+export interface BulkImportResult {
+  totalProcessed: number;
+  createdCount: number;
+  updatedCount: number;
+  pricesAddedCount: number;
+  categoriesCreatedCount: number;
+  manufacturersCreatedCount: number;
+  errors: string[];
+}
+
+export interface OEMDiscountProfile {
+  manufacturerCode: string;
+  manufacturerName: string;
+  standardDiscountPercent: number;
+}
+
+export interface BureauClient {
+  clientID: number;
+  clientCode: string;
+  companyName: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  address: string;
+  authority: string;
+  defaultPaymentTerms: string;
+  defaultWarrantyMonths: number;
+  defaultDeliveryWeeks: number;
+  targetMarginPercent: number;
+  defaultOverheadPercent: number;
+  oemDiscounts: OEMDiscountProfile[];
+  notes?: string;
+  activeTendersCount?: number;
+  totalWonTendersValue?: number;
+}
+
+export interface ValueEngineeringOption {
+  oemCode: string;
+  oemName: string;
+  equipmentCost: number;
+  copperCost: number;
+  enclosureCost: number;
+  labourCost: number;
+  totalDirectCost: number;
+  overheadAmount: number;
+  profitAmount: number;
+  sellingPrice: number;
+  leadTimeWeeks: number;
+  technicalComplianceRating: number; // e.g. 98%
+  complianceNotes: string;
+}
+
+// ============================================================================
+// SAAS MULTI-TENANCY, SUBSCRIPTIONS & PRODUCTION HANDOVER TYPES
+// ============================================================================
+
+export type SaaSPlan = 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS';
+
+export type SaaSRole = 
+  | 'PLATFORM_ADMIN' 
+  | 'COMPANY_OWNER' 
+  | 'ESTIMATION_ENGINEER' 
+  | 'DESIGN_ENGINEER' 
+  | 'PURCHASE_OFFICER' 
+  | 'PRODUCTION_USER' 
+  | 'READ_ONLY';
+
+export interface CompanyTenant {
+  id: number;
+  companyCode: string;
+  companyName: string;
+  tradeLicenseNo?: string;
+  country: string;
+  city: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  vatTrn?: string;
+  currency: string;
+  defaultCostingMethod: 'MARKUP' | 'MARGIN';
+  defaultMarginPercent: number;
+  defaultVatPercent: number;
+  plan: SaaSPlan;
+  subscriptionStatus: 'TRIAL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'PAST_DUE' | 'CANCELLED';
+  trialEndsAt?: string;
+  maxProjects?: number;
+  maxUsers?: number;
+  requestedPlan?: SaaSPlan;
+  paymentReference?: string;
+}
+
+export interface SaaSSubscription {
+  id: number;
+  companyId: number;
+  plan: SaaSPlan;
+  priceAedMonthly: number;
+  billingCycle: 'MONTHLY' | 'ANNUAL';
+  status: 'ACTIVE' | 'TRIAL' | 'PENDING_APPROVAL' | 'EXPIRED';
+  maxProjects: number;
+  maxUsers: number;
+  featuresJson?: string;
+  currentPeriodStart?: string;
+  currentPeriodEnd?: string;
+  autoRenew: boolean;
+}
+
+export interface SaaSUser {
+  id: number;
+  uid: string;
+  companyId: number;
+  email: string;
+  fullName: string;
+  role: SaaSRole;
+  phone?: string;
+  isActive: boolean;
+}
+
+export interface ProductionJobCard {
+  id: number;
+  companyId: number;
+  projectId: number;
+  panelId?: number;
+  jobNumber: string;
+  panelTag: string;
+  status: 'QUEUED' | 'FABRICATION' | 'BUSBAR_WORK' | 'ASSEMBLY' | 'WIRING' | 'TESTING' | 'FAT_PASSED' | 'DISPATCHED';
+  targetDate?: string;
+  actualCompletionDate?: string;
+  supervisor?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchaseRequisitionRecord {
+  id: number;
+  companyId: number;
+  projectId: number;
+  prNumber: string;
+  status: 'PENDING' | 'APPROVED' | 'PO_ISSUED';
+  supplierName: string;
+  totalAmount: number;
+  requestedBy?: string;
+  itemsSummary?: string;
+  createdAt: string;
+}
+
+export interface AuditLogRecord {
+  id: number;
+  companyId: number;
+  userId?: number;
+  userEmail?: string;
+  action: string;
+  entity: string;
+  entityId?: number;
+  details?: string;
+  timestamp: string;
+}
+
+export * from './engineering';
+
