@@ -23,11 +23,12 @@ import {
 } from 'lucide-react';
 import { auth, googleAuthProvider } from '../../lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { CompanyTenant, SaaSUser, SaaSRole } from '../../types';
+import { CompanyTenant, SaaSUser, SaaSRole, SaaSSubscription } from '../../types';
 import { downloadProjectDocumentationPDF } from '../../services/projectDocumentationPdfService';
+import { authApprovalService } from '../../services/authApprovalService';
 
 interface FacebookLoginScreenProps {
-  onLoginSuccess: (user: SaaSUser, company: CompanyTenant) => void;
+  onLoginSuccess: (user: SaaSUser, company: CompanyTenant, subscription?: SaaSSubscription) => void;
 }
 
 export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
@@ -56,72 +57,9 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
   const [regPassword, setRegPassword] = useState('');
   const [regError, setRegError] = useState<string | null>(null);
   const [regSuccess, setRegSuccess] = useState(false);
+  const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
 
-  // Standard UAE Tenant templates for testing / quick start
-  const standardTenants = {
-    emirates: {
-      company: {
-        id: 1,
-        companyCode: 'EMIRATES-LV-01',
-        companyName: 'Emirates Switchgear Manufacturing LLC',
-        tradeLicenseNo: 'CN-1029384',
-        country: 'United Arab Emirates',
-        city: 'Dubai',
-        address: 'Al Quoz Industrial Area 4, Dubai, UAE',
-        phone: '+971 4 345 6789',
-        email: 'sales@emiratesswitchgear.ae',
-        vatTrn: '100234567800003',
-        currency: 'AED',
-        defaultCostingMethod: 'MARKUP' as const,
-        defaultMarginPercent: 15.0,
-        defaultVatPercent: 5.0,
-        plan: 'PROFESSIONAL' as const,
-        subscriptionStatus: 'ACTIVE' as const,
-      },
-      user: {
-        id: 1,
-        uid: 'user-emirates-owner',
-        companyId: 1,
-        email: 'owner@emiratesswitchgear.ae',
-        fullName: 'Eng. Ahmed Al-Mansoor',
-        role: 'COMPANY_OWNER' as const,
-        phone: '+971 50 123 4567',
-        isActive: true,
-      },
-    },
-    gulf: {
-      company: {
-        id: 2,
-        companyCode: 'GULF-PANELS-02',
-        companyName: 'Gulf Modern Switchboards FZCO',
-        tradeLicenseNo: 'FZ-9928172',
-        country: 'United Arab Emirates',
-        city: 'Abu Dhabi',
-        address: 'ICAD 1, Musaffah Industrial, Abu Dhabi, UAE',
-        phone: '+971 2 550 4321',
-        email: 'tenders@gulfswitchboards.ae',
-        vatTrn: '100987654300003',
-        currency: 'AED',
-        defaultCostingMethod: 'MARGIN' as const,
-        defaultMarginPercent: 18.5,
-        defaultVatPercent: 5.0,
-        plan: 'ADVANCED' as const,
-        subscriptionStatus: 'ACTIVE' as const,
-      },
-      user: {
-        id: 2,
-        uid: 'user-gulf-estimator',
-        companyId: 2,
-        email: 'estimator@gulfswitchboards.ae',
-        fullName: 'Eng. Suresh Kumar',
-        role: 'ESTIMATION_ENGINEER' as const,
-        phone: '+971 52 987 1122',
-        isActive: true,
-      },
-    },
-  };
-
-  // 1. Handle Standard Email / Password Login
+  // 1. Handle Standard Email / Password Login (Strictly Verified via AuthApprovalService)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -140,86 +78,19 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
     setIsLoading(true);
 
     setTimeout(() => {
-      // Check if user previously registered locally
-      const storedUsersRaw = localStorage.getItem('switchgear_registered_users');
-      let registeredUsers: Array<{ user: SaaSUser; company: CompanyTenant; password?: string }> = [];
-      if (storedUsersRaw) {
-        try {
-          registeredUsers = JSON.parse(storedUsersRaw);
-        } catch (err) {
-          console.error(err);
-        }
-      }
-
-      const match = registeredUsers.find(
-        (u) => u.user.email.toLowerCase() === cleanEmail
-      );
-
-      if (match) {
-        setIsLoading(false);
-        onLoginSuccess(match.user, match.company);
-        return;
-      }
-
-      // Check standard mock matches or generate new tenant for custom email
-      if (cleanEmail.includes('gulf')) {
-        setIsLoading(false);
-        onLoginSuccess(standardTenants.gulf.user, standardTenants.gulf.company);
-        return;
-      }
-
-      if (cleanEmail.includes('emirates') || cleanEmail.includes('owner') || cleanEmail.includes('admin')) {
-        setIsLoading(false);
-        onLoginSuccess(standardTenants.emirates.user, standardTenants.emirates.company);
-        return;
-      }
-
-      // Dynamically create a tenant for the user's domain
-      const companyDomain = cleanEmail.split('@')[1] || 'switchgear-plant.ae';
-      const companyDisplayName = companyDomain
-        .split('.')[0]
-        .replace(/[-_]/g, ' ')
-        .toUpperCase() + ' SWITCHGEAR LLC';
-
-      const customCompany: CompanyTenant = {
-        id: Date.now(),
-        companyCode: `UAE-${cleanEmail.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-        companyName: companyDisplayName,
-        tradeLicenseNo: `TL-${Math.floor(100000 + Math.random() * 900000)}`,
-        country: 'United Arab Emirates',
-        city: 'Dubai',
-        address: 'Dubai Industrial City, UAE',
-        phone: '+971 4 800 0000',
-        email: cleanEmail,
-        vatTrn: '100' + Math.floor(100000000000 + Math.random() * 900000000000),
-        currency: 'AED',
-        defaultCostingMethod: 'MARKUP',
-        defaultMarginPercent: 15.0,
-        defaultVatPercent: 5.0,
-        plan: 'STARTER',
-        subscriptionStatus: 'ACTIVE',
-      };
-
-      const customUser: SaaSUser = {
-        id: Date.now() + 1,
-        uid: `uid-${Date.now()}`,
-        companyId: customCompany.id,
-        email: cleanEmail,
-        fullName: cleanEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-        role: 'COMPANY_OWNER',
-        isActive: true,
-      };
-
-      // Save to registered list
-      registeredUsers.push({ user: customUser, company: customCompany, password });
-      localStorage.setItem('switchgear_registered_users', JSON.stringify(registeredUsers));
-
+      const authResult = authApprovalService.authenticateUser(cleanEmail, password);
       setIsLoading(false);
-      onLoginSuccess(customUser, customCompany);
-    }, 450);
+
+      if (!authResult.success || !authResult.user || !authResult.company) {
+        setErrorMessage(authResult.error || 'Invalid email or password.');
+        return;
+      }
+
+      onLoginSuccess(authResult.user, authResult.company, authResult.subscription);
+    }, 350);
   };
 
-  // 2. Real Google Sign-In with Firebase Authentication
+  // 2. Real Google Sign-In with Firebase Authentication (Assigns TRIAL Quota for New Users)
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -227,43 +98,49 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
       const result = await signInWithPopup(auth, googleAuthProvider);
       const fbUser = result.user;
 
-      const userEmail = fbUser.email || 'engineer@switchgear-enterprise.com';
+      const userEmail = (fbUser.email || 'engineer@switchgear-enterprise.com').toLowerCase();
+      const existingUsers = authApprovalService.getUsers();
+      const existingMatch = existingUsers.find(u => u.email.toLowerCase() === userEmail);
+
+      if (existingMatch) {
+        if (!existingMatch.approved) {
+          setErrorMessage('Your account is pending administrator approval. Please contact support.');
+          return;
+        }
+        const companies = authApprovalService.getClientCompanies();
+        const comp = companies.find(c => c.id === existingMatch.companyId) || companies[0];
+        const session = authApprovalService.buildSessionForCompanyAndUser(comp, existingMatch);
+        onLoginSuccess(session.user, session.company, session.subscription);
+        return;
+      }
+
+      // Register new Google user on Free Trial (2 Projects Quota)
+      const nameParts = (fbUser.displayName || 'Authorized Engineer').split(' ');
+      const firstName = nameParts[0] || 'Authorized';
+      const lastName = nameParts.slice(1).join(' ') || 'Engineer';
       const userDomain = userEmail.split('@')[1] || 'switchgear.ae';
-      const companyName = fbUser.displayName 
-        ? `${fbUser.displayName.split(' ')[0]}'s Switchgear Engineering LLC` 
+      const companyName = fbUser.displayName
+        ? `${firstName} Switchgear Engineering LLC`
         : `${userDomain.split('.')[0].toUpperCase()} Switchgear Manufacturing LLC`;
 
-      const googleCompany: CompanyTenant = {
-        id: Date.now(),
-        companyCode: `UAE-GG-${Math.floor(1000 + Math.random() * 9000)}`,
-        companyName: companyName,
-        tradeLicenseNo: `TL-${Math.floor(200000 + Math.random() * 800000)}`,
-        country: 'United Arab Emirates',
+      const regResult = authApprovalService.registerCustomerAccount({
+        firstName,
+        lastName,
+        email: userEmail,
+        password: `google-sso-${fbUser.uid.slice(0, 8)}`,
+        companyName,
         city: 'Dubai',
-        address: 'Al Quoz Industrial Area, Dubai, UAE',
-        phone: fbUser.phoneNumber || '+971 4 234 5678',
-        email: userEmail,
-        vatTrn: '100' + Math.floor(100000000000 + Math.random() * 900000000000),
-        currency: 'AED',
-        defaultCostingMethod: 'MARKUP',
-        defaultMarginPercent: 15.0,
-        defaultVatPercent: 5.0,
-        plan: 'PROFESSIONAL',
-        subscriptionStatus: 'ACTIVE',
-      };
-
-      const googleUser: SaaSUser = {
-        id: Date.now() + 2,
-        uid: fbUser.uid,
-        companyId: googleCompany.id,
-        email: userEmail,
-        fullName: fbUser.displayName || 'Authorized Engineer',
         role: 'COMPANY_OWNER',
-        phone: fbUser.phoneNumber || undefined,
-        isActive: true,
-      };
+      });
 
-      onLoginSuccess(googleUser, googleCompany);
+      if (regResult.requiresApproval) {
+        setErrorMessage('Your Google account has been registered and is pending administrator approval.');
+        return;
+      }
+
+      if (regResult.success && regResult.user && regResult.company) {
+        onLoginSuccess(regResult.user, regResult.company, regResult.subscription);
+      }
     } catch (err: any) {
       console.warn('Firebase popup notice:', err);
       if (err.code === 'auth/popup-closed-by-user') {
@@ -276,10 +153,11 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
     }
   };
 
-  // 3. Handle Registration Form Submission
+  // 3. Handle Registration Form Submission (Creates Free Trial Account with 2 Estimations Quota)
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
+    setRegSuccessMessage(null);
 
     if (!regFirstName.trim() || !regLastName.trim()) {
       setRegError('Please enter your first and last name.');
@@ -301,61 +179,65 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
       return;
     }
 
-    const cleanEmail = regEmail.trim().toLowerCase();
-    const cleanCompanyName = regCompanyName.trim();
-    const fullName = `${regFirstName.trim()} ${regLastName.trim()}`;
-
-    const newCompany: CompanyTenant = {
-      id: Date.now(),
-      companyCode: `UAE-${cleanCompanyName.slice(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-      companyName: cleanCompanyName,
-      tradeLicenseNo: `TL-${Math.floor(300000 + Math.random() * 600000)}`,
-      country: 'United Arab Emirates',
+    const result = authApprovalService.registerCustomerAccount({
+      firstName: regFirstName,
+      lastName: regLastName,
+      email: regEmail,
+      password: regPassword,
+      companyName: regCompanyName,
       city: regEmirate,
-      address: `${regEmirate} Industrial Zone, UAE`,
-      phone: '+971 4 000 0000',
-      email: cleanEmail,
-      vatTrn: '100' + Math.floor(100000000000 + Math.random() * 900000000000),
-      currency: 'AED',
-      defaultCostingMethod: 'MARKUP',
-      defaultMarginPercent: 15.0,
-      defaultVatPercent: 5.0,
-      plan: 'STARTER',
-      subscriptionStatus: 'ACTIVE',
-    };
-
-    const newUser: SaaSUser = {
-      id: Date.now() + 1,
-      uid: `uid-reg-${Date.now()}`,
-      companyId: newCompany.id,
-      email: cleanEmail,
-      fullName: fullName,
       role: regRole,
-      isActive: true,
-    };
+    });
 
-    // Store in localStorage
-    const storedUsersRaw = localStorage.getItem('switchgear_registered_users');
-    let registeredUsers: Array<{ user: SaaSUser; company: CompanyTenant; password?: string }> = [];
-    if (storedUsersRaw) {
-      try {
-        registeredUsers = JSON.parse(storedUsersRaw);
-      } catch (err) {}
+    if (!result.success) {
+      setRegError(result.error || 'Registration failed.');
+      return;
     }
-    registeredUsers.push({ user: newUser, company: newCompany, password: regPassword });
-    localStorage.setItem('switchgear_registered_users', JSON.stringify(registeredUsers));
+
+    if (result.requiresApproval) {
+      setRegSuccess(true);
+      setRegSuccessMessage('Account submitted for Administrator Approval! You will be able to log in once approved.');
+      setTimeout(() => {
+        setShowRegisterModal(false);
+        setRegSuccess(false);
+        setErrorMessage('Your account registration is pending administrator approval.');
+      }, 2200);
+      return;
+    }
 
     setRegSuccess(true);
+    setRegSuccessMessage('Free Trial account created (2 Free Project Estimations included)! Logging you in...');
     setTimeout(() => {
       setShowRegisterModal(false);
-      onLoginSuccess(newUser, newCompany);
-    }, 600);
+      setRegSuccess(false);
+      if (result.user && result.company) {
+        onLoginSuccess(result.user, result.company, result.subscription);
+      }
+    }, 800);
   };
 
-  // 4. Quick Demo Switcher helper (for convenience)
-  const handleQuickDemoLogin = (tenantKey: 'emirates' | 'gulf') => {
-    const selected = standardTenants[tenantKey];
-    onLoginSuccess(selected.user, selected.company);
+  // 4. Quick Evaluation Login helper (Uses verified accounts in AuthApprovalService)
+  const handleQuickDemoLogin = (accountType: 'admin' | 'emirates' | 'gulf') => {
+    if (accountType === 'admin') {
+      const res = authApprovalService.authenticateUser('admin@lvswitchgear.com', 'Admin@2026');
+      if (res.success && res.user && res.company) {
+        onLoginSuccess(res.user, res.company, res.subscription);
+      }
+      return;
+    }
+    if (accountType === 'emirates') {
+      const res = authApprovalService.authenticateUser('tariq.m@alghandiswitchgear.ae', 'Client@2026');
+      if (res.success && res.user && res.company) {
+        onLoginSuccess(res.user, res.company, res.subscription);
+      }
+      return;
+    }
+    if (accountType === 'gulf') {
+      const res = authApprovalService.authenticateUser('suresh.k@danwayeme.com', 'Client@2026');
+      if (res.success && res.user && res.company) {
+        onLoginSuccess(res.user, res.company, res.subscription);
+      }
+    }
   };
 
   return (
@@ -550,22 +432,30 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
           {/* Fast 1-Click Evaluation Buttons (Convenient for review & testing) */}
           <div className="mt-5 pt-4 border-t border-slate-200/80 w-full text-center">
             <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-              Fast Demo Evaluation (1-Click Test Login)
+              Quick Role Test Logins (Admin vs. Paid Client)
             </div>
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleQuickDemoLogin('admin')}
+                className="text-xs bg-slate-900 hover:bg-slate-800 text-cyan-300 font-bold px-3 py-1.5 rounded border border-slate-700 transition shadow-2xs cursor-pointer"
+                title="Login as Platform Owner (admin@lvswitchgear.com / Admin@2026) to manage clients, approvals & quotas"
+              >
+                ★ Platform Admin (Owner)
+              </button>
               <button
                 type="button"
                 onClick={() => handleQuickDemoLogin('emirates')}
-                className="text-xs bg-white hover:bg-slate-100 text-slate-700 font-medium px-3 py-1.5 rounded border border-slate-300 transition shadow-2xs"
+                className="text-xs bg-white hover:bg-slate-100 text-slate-700 font-medium px-3 py-1.5 rounded border border-slate-300 transition shadow-2xs cursor-pointer"
               >
-                Emirates Switchgear (Owner)
+                Al Ghandi (Paid Client)
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickDemoLogin('gulf')}
-                className="text-xs bg-white hover:bg-slate-100 text-slate-700 font-medium px-3 py-1.5 rounded border border-slate-300 transition shadow-2xs"
+                className="text-xs bg-white hover:bg-slate-100 text-slate-700 font-medium px-3 py-1.5 rounded border border-slate-300 transition shadow-2xs cursor-pointer"
               >
-                Gulf Panels (Estimator)
+                Danway (Estimator)
               </button>
             </div>
           </div>
@@ -634,8 +524,8 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-bold text-slate-900">Sign Up</h3>
-                <p className="text-xs text-slate-500 mt-0.5">It’s quick and easy.</p>
+                <h3 className="text-2xl font-bold text-slate-900">Sign Up for Free Trial</h3>
+                <p className="text-xs text-emerald-700 font-semibold mt-0.5">Includes 2 Free LV Switchgear Project Estimations</p>
               </div>
               <button
                 type="button"
@@ -658,7 +548,7 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
               {regSuccess && (
                 <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-800 text-xs flex items-center gap-2">
                   <Check className="w-4 h-4 shrink-0" />
-                  <span>Account registered! Logging you into your tenant workspace...</span>
+                  <span>{regSuccessMessage || 'Account registered! Logging you into your tenant workspace...'}</span>
                 </div>
               )}
 

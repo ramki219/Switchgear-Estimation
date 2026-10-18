@@ -173,9 +173,10 @@ app.put('/api/tenant/company', requireAuth, async (req: AuthRequest, res: Respon
 app.post('/api/tenant/subscription/change-plan', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const companyId = req.companyId!;
-    const { plan, billingCycle } = req.body;
+    const { plan, billingCycle, paymentReference, instantActivate } = req.body;
 
     const plansConfig: Record<string, { price: string; maxProjects: number; maxUsers: number }> = {
+      TRIAL: { price: '0.00', maxProjects: 2, maxUsers: 1 },
       STARTER: { price: '299.00', maxProjects: 10, maxUsers: 2 },
       PROFESSIONAL: { price: '499.00', maxProjects: 50, maxUsers: 5 },
       ADVANCED: { price: '999.00', maxProjects: 200, maxUsers: 15 },
@@ -183,25 +184,28 @@ app.post('/api/tenant/subscription/change-plan', requireAuth, async (req: AuthRe
     };
 
     const targetConfig = plansConfig[plan] || plansConfig.STARTER;
+    const targetStatus = instantActivate ? 'ACTIVE' : 'PENDING_APPROVAL';
 
     // Update company plan
-    await db.update(companies).set({
-      plan,
-      subscriptionStatus: 'ACTIVE',
-      updatedAt: new Date(),
-    }).where(eq(companies.id, companyId));
+    if (instantActivate) {
+      await db.update(companies).set({
+        plan,
+        subscriptionStatus: 'ACTIVE',
+        updatedAt: new Date(),
+      }).where(eq(companies.id, companyId));
+    }
 
     // Upsert subscription
     const existing = await db.select().from(subscriptions).where(eq(subscriptions.companyId, companyId));
     let subResult;
     if (existing.length > 0) {
       subResult = await db.update(subscriptions).set({
-        plan,
+        plan: instantActivate ? plan : existing[0].plan,
         priceAedMonthly: targetConfig.price,
         billingCycle: billingCycle || 'MONTHLY',
-        status: 'ACTIVE',
-        maxProjects: targetConfig.maxProjects,
-        maxUsers: targetConfig.maxUsers,
+        status: targetStatus,
+        maxProjects: instantActivate ? targetConfig.maxProjects : existing[0].maxProjects,
+        maxUsers: instantActivate ? targetConfig.maxUsers : existing[0].maxUsers,
       }).where(eq(subscriptions.id, existing[0].id)).returning();
     } else {
       subResult = await db.insert(subscriptions).values({
@@ -209,13 +213,20 @@ app.post('/api/tenant/subscription/change-plan', requireAuth, async (req: AuthRe
         plan,
         priceAedMonthly: targetConfig.price,
         billingCycle: billingCycle || 'MONTHLY',
-        status: 'ACTIVE',
+        status: targetStatus,
         maxProjects: targetConfig.maxProjects,
         maxUsers: targetConfig.maxUsers,
       }).returning();
     }
 
-    logAudit(companyId, req.user?.email || 'user', 'UPGRADE_SUBSCRIPTION', 'subscriptions', subResult[0].id, `Plan changed to ${plan}`);
+    logAudit(
+      companyId,
+      req.user?.email || 'user',
+      'UPGRADE_SUBSCRIPTION',
+      'subscriptions',
+      subResult[0].id,
+      `Plan request: ${plan} (${targetStatus}) Ref: ${paymentReference || 'N/A'}`
+    );
 
     res.json(subResult[0]);
   } catch (error: any) {
@@ -255,6 +266,18 @@ app.post('/api/projects', requireAuth, async (req: AuthRequest, res: Response) =
   try {
     const companyId = req.companyId!;
     const data = req.body;
+
+    // Enforce Tenant Subscription Quota (maxProjects)
+    const existingProjects = await db.select().from(projects).where(eq(projects.companyId, companyId));
+    const subRows = await db.select().from(subscriptions).where(eq(subscriptions.companyId, companyId));
+    const maxAllowed = subRows.length > 0 ? (subRows[0].maxProjects || 2) : 2;
+
+    if (existingProjects.length >= maxAllowed) {
+      return res.status(403).json({
+        error: `Estimation project quota reached (${existingProjects.length} / ${maxAllowed}). Please upgrade your subscription plan to create additional projects.`,
+        code: 'QUOTA_EXCEEDED',
+      });
+    }
 
     const newProject = await db.insert(projects).values({
       companyId,

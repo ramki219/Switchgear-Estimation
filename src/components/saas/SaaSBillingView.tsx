@@ -1,6 +1,6 @@
 // ============================================================================
 // SAAS BILLING & SUBSCRIPTION MANAGEMENT VIEW
-// Pricing in AED, Tenant Limits, Feature Matrix & Plan Upgrade/Downgrade
+// Pricing in AED, Tenant Limits, Feature Matrix, Real Payment Settings & Checkout
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -19,43 +19,63 @@ import {
   Printer,
   Download,
   Landmark,
-  ArrowDownRight
+  ArrowDownRight,
+  Settings,
+  ExternalLink,
+  Clock,
+  Lock
 } from 'lucide-react';
-import { SaaSPlan, CompanyTenant, SaaSSubscription } from '../../types';
+import { SaaSPlan, CompanyTenant, SaaSSubscription, UserProfile } from '../../types';
+import { authApprovalService, PLAN_LIMITS, PlatformPaymentSettings } from '../../services/authApprovalService';
 
 interface SaaSBillingViewProps {
   company: CompanyTenant;
   subscription: SaaSSubscription | null;
-  onUpgradePlan: (newPlan: SaaSPlan, billingCycle: 'MONTHLY' | 'ANNUAL') => Promise<void>;
+  currentUser?: UserProfile;
+  projectsCount?: number;
+  onUpgradePlan: (newPlan: SaaSPlan, billingCycle: 'MONTHLY' | 'ANNUAL', paymentRef?: string, instantActivate?: boolean) => Promise<void>;
 }
 
 export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
   company,
   subscription,
+  currentUser,
+  projectsCount = 0,
   onUpgradePlan,
 }) => {
   const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY');
-  const [selectedPlan, setSelectedPlan] = useState<SaaSPlan>(company.plan || 'PROFESSIONAL');
+  const [selectedPlan, setSelectedPlan] = useState<SaaSPlan>(company.plan || 'TRIAL');
   const [isUpdating, setIsUpdating] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Dynamic Platform Owner Payment & Bank Settings
+  const [paymentSettings, setPaymentSettings] = useState<PlatformPaymentSettings>(() =>
+    authApprovalService.getPaymentSettings()
+  );
+  const [showAdminSettingsModal, setShowAdminSettingsModal] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<PlatformPaymentSettings>(() =>
+    authApprovalService.getPaymentSettings()
+  );
 
   // Payment Checkout Modal State
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [planToCheckout, setPlanToCheckout] = useState<any>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bank_transfer'>('card');
-  const [cardHolder, setCardHolder] = useState(company.companyName || 'Corporate Cardholder');
-  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bank_transfer'>('bank_transfer');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
+
+  const isPlatformAdmin = currentUser?.role === 'ADMIN' || currentUser?.saasRole === 'PLATFORM_ADMIN';
+  const maxProjectsAllowed = company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2;
+  const maxUsersAllowed = company.maxUsers || PLAN_LIMITS[company.plan || 'TRIAL']?.maxUsers || 1;
+  const usagePercentage = Math.min(100, Math.round((projectsCount / Math.max(1, maxProjectsAllowed)) * 100));
 
   React.useEffect(() => {
-    if (company.companyName) {
-      setCardHolder(company.companyName);
-    }
     if (company.plan) {
       setSelectedPlan(company.plan);
     }
   }, [company]);
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
 
   const plans = [
     {
@@ -67,6 +87,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       badge: 'Entry Level',
       maxProjects: 10,
       maxUsers: 2,
+      stripeUrl: paymentSettings.stripeStarterUrl,
       features: [
         'Single company tenant',
         'Standard MDB, SMDB & DB estimation',
@@ -92,6 +113,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       popular: true,
       maxProjects: 50,
       maxUsers: 5,
+      stripeUrl: paymentSettings.stripeProfessionalUrl,
       features: [
         'Full LV switchgear estimation suite',
         'Up to 50 active projects',
@@ -117,6 +139,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       badge: 'Factory Scale',
       maxProjects: 200,
       maxUsers: 15,
+      stripeUrl: paymentSettings.stripeAdvancedUrl,
       features: [
         'All Professional features included',
         'Up to 200 active projects',
@@ -142,6 +165,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       badge: 'Enterprise',
       maxProjects: 1000,
       maxUsers: 50,
+      stripeUrl: paymentSettings.stripeBusinessUrl,
       features: [
         'All Advanced features included',
         'Unlimited active projects (up to 1,000)',
@@ -159,19 +183,45 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
 
   const handleSelectPlan = (plan: any) => {
     setPlanToCheckout(plan);
+    setPaymentReference('');
+    setErrorMessage(null);
     setCheckoutModalOpen(true);
   };
 
-  const handleConfirmCheckout = async () => {
+  const handleSavePaymentSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    const saved = authApprovalService.savePaymentSettings(settingsForm);
+    setPaymentSettings(saved);
+    setShowAdminSettingsModal(false);
+    setSuccessMessage('Platform Bank Account, VAT TRN, and Stripe Payment Links saved successfully!');
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  const handleSubmitPaymentRequest = async (instantAdminOverride = false) => {
     if (!planToCheckout) return;
+    if (!instantAdminOverride && !paymentReference.trim()) {
+      setErrorMessage('Please enter your Bank Transfer Reference / Wire Narration or Stripe Receipt ID so our billing team can verify and activate your subscription.');
+      return;
+    }
+
     setIsProcessingPayment(true);
+    setErrorMessage(null);
     try {
-      await onUpgradePlan(planToCheckout.id, billingCycle);
-      setSuccessMessage(`Subscription upgraded to ${planToCheckout.name} successfully! Payment processed in AED.`);
+      const refString = paymentReference.trim() || `ADMIN-OVERRIDE-${Date.now().toString().slice(-5)}`;
+      await onUpgradePlan(planToCheckout.id, billingCycle, refString, instantAdminOverride);
+
+      if (instantAdminOverride) {
+        setSuccessMessage(`Plan immediately activated to ${planToCheckout.name} (${planToCheckout.maxProjects} Projects quota).`);
+      } else {
+        setSuccessMessage(
+          `Upgrade request for ${planToCheckout.name} Plan submitted with reference "${refString}". Your account status is PENDING_APPROVAL and will be activated upon payment verification.`
+        );
+      }
       setCheckoutModalOpen(false);
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setTimeout(() => setSuccessMessage(null), 8000);
     } catch (e: any) {
       console.error(e);
+      setErrorMessage(e?.message || 'Failed to process upgrade request.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -182,49 +232,137 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       {/* Top Banner */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200 uppercase">
               SaaS Subscription & Tenant Licensing
             </span>
-            <span className="text-[10px] bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-200 font-bold">
-              STATUS: {company.subscriptionStatus || 'ACTIVE'}
+            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${
+              company.subscriptionStatus === 'ACTIVE'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : company.subscriptionStatus === 'PENDING_APPROVAL'
+                ? 'bg-amber-50 text-amber-800 border-amber-300'
+                : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+            }`}>
+              STATUS: {company.subscriptionStatus || 'TRIALING'}
             </span>
             <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-              Current Plan: <strong className="text-slate-900">{company.plan || 'PROFESSIONAL'}</strong>
+              Current Plan: <strong className="text-slate-900">{company.plan || 'TRIAL'}</strong>
             </span>
+            {company.requestedPlan && (
+              <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded border border-amber-300 font-bold flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Upgrade Pending: {company.requestedPlan} (Ref: {company.paymentReference})
+              </span>
+            )}
           </div>
           <h2 className="text-base font-bold text-slate-900 mt-1">
-            Subscription Plans for UAE Switchgear Manufacturers
+            Subscription Plans & Estimation Quota Management
           </h2>
           <p className="text-xs text-slate-500 font-sans mt-0.5">
             Scalable multi-tenant cloud licensing for electrical panel estimation, single line diagram engineering, and production handover.
           </p>
         </div>
 
-        {/* Annual / Monthly Toggle */}
-        <div className="flex items-center gap-3 bg-slate-100 p-1.5 rounded-lg border border-slate-200 shrink-0">
-          <button
-            onClick={() => setBillingCycle('MONTHLY')}
-            className={`px-3 py-1.5 rounded-md font-bold text-xs transition ${
-              billingCycle === 'MONTHLY' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Monthly Billing
-          </button>
-          <button
-            onClick={() => setBillingCycle('ANNUAL')}
-            className={`px-3 py-1.5 rounded-md font-bold text-xs transition flex items-center gap-1.5 ${
-              billingCycle === 'ANNUAL' ? 'bg-white text-cyan-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Annual (Save 17%)</span>
-            <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold">2 Months Free</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {isPlatformAdmin && (
+            <button
+              onClick={() => {
+                setSettingsForm(authApprovalService.getPaymentSettings());
+                setShowAdminSettingsModal(true);
+              }}
+              className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Configure Your Bank & Stripe Settings</span>
+            </button>
+          )}
+
+          {/* Annual / Monthly Toggle */}
+          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200 shrink-0">
+            <button
+              onClick={() => setBillingCycle('MONTHLY')}
+              className={`px-3 py-1.5 rounded-md font-bold text-xs transition ${
+                billingCycle === 'MONTHLY' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Monthly Billing
+            </button>
+            <button
+              onClick={() => setBillingCycle('ANNUAL')}
+              className={`px-3 py-1.5 rounded-md font-bold text-xs transition flex items-center gap-1.5 ${
+                billingCycle === 'ANNUAL' ? 'bg-white text-cyan-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Annual (Save 17%)</span>
+              <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold">2 Months Free</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Live Tenant Estimation Quota Meter */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-950 text-white rounded-xl p-5 border border-slate-700 shadow-xs">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 block">
+              Active Tenant Workspace Quota
+            </span>
+            <h3 className="text-sm font-bold text-white mt-0.5">
+              {company.companyName} ({company.companyCode})
+            </h3>
+            <p className="text-[11px] text-slate-300 font-sans mt-1">
+              {company.plan === 'TRIAL'
+                ? 'You are currently on the Free Trial tier (max 2 estimation projects, PDF/Excel commercial exports locked).'
+                : `Your ${company.plan} license includes up to ${maxProjectsAllowed} estimation projects and full commercial BOQ/Quotation exports.`}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-300 flex items-center gap-1.5">
+                <FolderGit2 className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Estimations / Projects Used:</span>
+              </span>
+              <strong className={projectsCount >= maxProjectsAllowed ? 'text-rose-400' : 'text-emerald-400'}>
+                {projectsCount} / {maxProjectsAllowed} Projects ({usagePercentage}%)
+              </strong>
+            </div>
+            <div className="w-full h-2.5 bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  projectsCount >= maxProjectsAllowed
+                    ? 'bg-rose-500'
+                    : usagePercentage >= 75
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-400'
+                }`}
+                style={{ width: `${usagePercentage}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span>Licensed User Seats: {maxUsersAllowed} Engineers</span>
+              <span>Commercial Exports: {company.plan === 'TRIAL' ? '🔒 Locked on Trial' : '✅ Unlocked'}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-end justify-center gap-2">
+            {projectsCount >= maxProjectsAllowed ? (
+              <div className="bg-rose-500/20 border border-rose-400/40 text-rose-200 px-3 py-2 rounded-lg text-[11px] font-sans flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>You have reached your {maxProjectsAllowed}-project quota limit. Select a plan below to unlock more estimations.</span>
+              </div>
+            ) : (
+              <div className="bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 px-3 py-2 rounded-lg text-[11px] font-sans flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span><strong>{Math.max(0, maxProjectsAllowed - projectsCount)}</strong> estimation project slots remaining in your current quota.</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {successMessage && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 p-3 rounded-xl flex items-center gap-2">
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-800 p-3.5 rounded-xl flex items-center gap-2 font-sans text-xs font-medium">
           <Check className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{successMessage}</span>
         </div>
@@ -234,6 +372,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {plans.map((p) => {
           const isCurrent = company.plan === p.id;
+          const isPendingThisPlan = company.requestedPlan === p.id;
           const displayPrice = billingCycle === 'ANNUAL' ? Math.round(p.priceAnnual / 12) : p.priceMonthly;
 
           return (
@@ -253,6 +392,11 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                   {isCurrent && (
                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                       Active Plan
+                    </span>
+                  )}
+                  {isPendingThisPlan && !isCurrent && (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Pending Approval
                     </span>
                   )}
                 </div>
@@ -303,7 +447,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                 <button
                   disabled={isCurrent || isUpdating}
                   onClick={() => handleSelectPlan(p)}
-                  className={`w-full py-2.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 ${
+                  className={`w-full py-2.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
                     isCurrent
                       ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                       : p.popular
@@ -314,9 +458,11 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                   {isCurrent ? (
                     'Current Active Plan'
                   ) : (
-                    <>
-                      <span>{p.priceMonthly > (plans.find(x => x.id === company.plan)?.priceMonthly || 0) ? 'Upgrade to ' + p.name : 'Switch to ' + p.name}</span>
-                    </>
+                    <span>
+                      {p.priceMonthly > (plans.find(x => x.id === company.plan)?.priceMonthly || 0)
+                        ? 'Upgrade to ' + p.name
+                        : 'Switch to ' + p.name}
+                    </span>
                   )}
                 </button>
               </div>
@@ -325,77 +471,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
         })}
       </div>
 
-      {/* THREE ARCHITECTURAL PILLARS: LOGIN, USERS, PAYMENT SETTLEMENT */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-        {/* 1. LOGIN & AUTHENTICATION */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-6 h-6 rounded-md bg-cyan-100 text-cyan-800 flex items-center justify-center font-bold text-xs">1</span>
-              <h4 className="font-bold text-slate-900 text-xs">How Clients Sign In & Register</h4>
-            </div>
-            <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
-              Clients access the platform via <strong>Google Authentication & Firebase Auth</strong>. On initial sign-in, the system provisions an isolated company tenant record in PostgreSQL with strict data isolation so competitors never see their private bids.
-            </p>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 font-mono text-[10px] text-slate-500">
-            Tech: OAuth2 + Bearer Tokens verified on Cloud Run backend.
-          </div>
-        </div>
-
-        {/* 2. CREATING USER IDS & ROLES */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-800 flex items-center justify-center font-bold text-xs">2</span>
-              <h4 className="font-bold text-slate-900 text-xs">How User IDs Are Managed</h4>
-            </div>
-            <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
-              The registering user becomes the <strong>Company Owner</strong>. From <strong>Company & TRN &gt; Team Members</strong>, the owner invites estimation engineers, design draftsmen, and purchase officers within their subscription seat quota (2 to 50 seats).
-            </p>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 font-mono text-[10px] text-slate-500">
-            Roles: Owner, Estimator, Design, Purchase, Production.
-          </div>
-        </div>
-
-        {/* 3. PAYMENT SETTLEMENT & YOUR BANK ACCOUNT */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">3</span>
-              <h4 className="font-bold text-emerald-950 text-xs">Where Money Enters Your Bank</h4>
-            </div>
-            <p className="text-[11px] text-slate-700 font-sans leading-relaxed">
-              Clients pay in <strong>AED</strong> via <strong>Stripe UAE / Checkout.com</strong> (cards) or <strong>Direct Corporate Bank Transfer</strong>. Card payments auto-deposit into your UAE Corporate Bank Account (Emirates NBD, FAB, ADCB, Wio) every 2-3 days. Bank transfers go 100% directly to your IBAN with zero gateway fees.
-            </p>
-          </div>
-          <div className="mt-3 pt-3 border-t border-emerald-200 font-mono text-[10px] text-emerald-800 font-bold">
-            Settlement: Automated direct deposit to UAE IBAN in AED.
-          </div>
-        </div>
-      </div>
-
-      {/* UAE Commercial Billing Note */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center shrink-0">
-            <Building2 className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="text-sm font-bold text-slate-900">UAE Corporate Tax Invoice & Bank Settlement</h4>
-            <p className="text-xs text-slate-500 font-sans mt-0.5">
-              All subscription charges generate official FTA-compliant UAE Tax Invoices (5% VAT). Funds settle directly into your registered UAE Corporate Bank Account.
-            </p>
-          </div>
-        </div>
-        <div className="text-right shrink-0">
-          <span className="text-[11px] text-slate-500 block">SaaS Operations Desk (Dubai, UAE)</span>
-          <span className="text-xs font-bold text-slate-900">+971 4 345 6789 / billing@lvestimator.ae</span>
-        </div>
-      </div>
-
-      {/* CONNECTED UAE CORPORATE BANK ACCOUNT & AUTOMATED PAYOUT LEDGER */}
+      {/* CONNECTED UAE CORPORATE BANK ACCOUNT & PAYOUT DETAILS */}
       <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-3 gap-2">
           <div className="flex items-center gap-2">
@@ -404,116 +480,57 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
             </div>
             <div>
               <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                <span>Your Connected UAE Corporate Bank Account</span>
+                <span>Official Settlement Bank Account & Tax Details</span>
                 <span className="text-[9px] bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200 font-bold uppercase">
-                  Payout Target Verified
+                  Direct AED Settlement
                 </span>
               </h4>
               <p className="text-[11px] text-slate-500 font-sans">
-                Where all customer subscription amounts (card payments & bank transfers) are deposited in AED.
+                All subscription payments (Stripe Checkout Links or Corporate Bank Transfers) settle to the following account.
               </p>
             </div>
           </div>
           <div className="font-mono text-right text-[11px]">
-            <span className="text-slate-500 block">Payout Schedule</span>
-            <strong className="text-emerald-800">Rolling 2 Business Days (Daily Auto-Transfer)</strong>
+            <span className="text-slate-500 block">Billing & Support Desk</span>
+            <strong className="text-slate-900">{paymentSettings.supportPhone} • {paymentSettings.supportEmail}</strong>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-[11px]">
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <span className="text-slate-500 block text-[10px]">Beneficiary Entity</span>
+            <strong className="text-slate-900">{paymentSettings.beneficiaryName}</strong>
+            <span className="text-[10px] text-slate-400 block">Corporate Account</span>
+          </div>
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px]">Bank Institution</span>
-            <strong className="text-slate-900">Emirates NBD Bank PJSC</strong>
-            <span className="text-[10px] text-slate-400 block">Dubai, UAE</span>
+            <strong className="text-slate-900">{paymentSettings.bankName}</strong>
+            <span className="text-[10px] text-slate-400 block">SWIFT: {paymentSettings.swiftBic}</span>
           </div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px]">Settlement Account (IBAN)</span>
-            <strong className="text-emerald-900 tracking-wider">AE29 0331 2345 6789 0123 456</strong>
-            <span className="text-[10px] text-slate-400 block">SWIFT: EBILAEADXXX</span>
-          </div>
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-            <span className="text-slate-500 block text-[10px]">Available Balance</span>
-            <strong className="text-slate-900 text-sm">6,602.40 AED</strong>
-            <span className="text-[10px] text-emerald-600 block">Next payout: 12-Oct-2026</span>
+            <strong className="text-emerald-900 tracking-wider">{paymentSettings.iban}</strong>
+            <span className="text-[10px] text-emerald-600 block">Direct AED Wire / Transfer</span>
           </div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px]">VAT Registered Entity</span>
-            <strong className="text-slate-900">TRN: 100234567800003</strong>
-            <span className="text-[10px] text-slate-400 block">FTA UAE Compliant</span>
-          </div>
-        </div>
-
-        {/* Recent Payout Settlements Ledger */}
-        <div className="pt-2">
-          <span className="text-[11px] font-bold text-slate-700 block mb-2 font-mono">
-            Recent Client Subscription Settlements Deposited to IBAN
-          </span>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-[11px] font-mono">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                  <th className="p-2.5">Date</th>
-                  <th className="p-2.5">Client Switchgear Manufacturer</th>
-                  <th className="p-2.5">Plan / Description</th>
-                  <th className="p-2.5">Payment Method</th>
-                  <th className="p-2.5 text-right">Amount (AED)</th>
-                  <th className="p-2.5 text-center">Settlement Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                <tr className="hover:bg-slate-50/70">
-                  <td className="p-2.5 text-slate-500">10-Oct-2026</td>
-                  <td className="p-2.5 font-bold text-slate-900">Emirates Switchgear Manufacturing LLC</td>
-                  <td className="p-2.5 text-slate-600">Professional Plan (Annual License)</td>
-                  <td className="p-2.5 text-slate-600">Direct Corporate Bank Transfer</td>
-                  <td className="p-2.5 text-right font-bold text-slate-900">5,239.50 AED</td>
-                  <td className="p-2.5 text-center">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      Settled to IBAN
-                    </span>
-                  </td>
-                </tr>
-                <tr className="hover:bg-slate-50/70">
-                  <td className="p-2.5 text-slate-500">02-Oct-2026</td>
-                  <td className="p-2.5 font-bold text-slate-900">Gulf Modern Switchboards FZCO</td>
-                  <td className="p-2.5 text-slate-600">Advanced Plan (Monthly)</td>
-                  <td className="p-2.5 text-slate-600">Corporate Card (Stripe UAE)</td>
-                  <td className="p-2.5 text-right font-bold text-slate-900">1,048.95 AED</td>
-                  <td className="p-2.5 text-center">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      Settled to IBAN
-                    </span>
-                  </td>
-                </tr>
-                <tr className="hover:bg-slate-50/70">
-                  <td className="p-2.5 text-slate-500">28-Sep-2026</td>
-                  <td className="p-2.5 font-bold text-slate-900">Apex Electrical Integration LLC</td>
-                  <td className="p-2.5 text-slate-600">Starter Plan (Monthly)</td>
-                  <td className="p-2.5 text-slate-600">Corporate Card (Stripe UAE)</td>
-                  <td className="p-2.5 text-right font-bold text-slate-900">313.95 AED</td>
-                  <td className="p-2.5 text-center">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      Settled to IBAN
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <strong className="text-slate-900">TRN: {paymentSettings.vatTrn}</strong>
+            <span className="text-[10px] text-slate-400 block">FTA UAE 5% VAT Compliant</span>
           </div>
         </div>
       </div>
 
-      {/* CHECKOUT & BANK SETTLEMENT MODAL */}
+      {/* CHECKOUT & PAYMENT REFERENCE VERIFICATION MODAL */}
       {checkoutModalOpen && planToCheckout && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono text-xs">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200 uppercase">
-                  Secure Checkout in AED
+                  Subscription Upgrade & Quota Unlock
                 </span>
                 <h3 className="text-base font-bold text-slate-900 mt-1">
-                  Subscribe to {planToCheckout.name} Plan
+                  Subscribe to {planToCheckout.name} Plan ({planToCheckout.maxProjects} Projects)
                 </h3>
               </div>
               <button
@@ -524,6 +541,13 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
               </button>
             </div>
 
+            {errorMessage && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] font-sans flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+
             {/* Price calculation */}
             {(() => {
               const basePrice = billingCycle === 'ANNUAL' ? planToCheckout.priceAnnual : planToCheckout.priceMonthly;
@@ -533,7 +557,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
               return (
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
                   <div className="flex justify-between text-slate-600">
-                    <span>Plan Base ({billingCycle}):</span>
+                    <span>Plan Base ({billingCycle}) — {planToCheckout.maxProjects} Projects Quota:</span>
                     <strong className="text-slate-900">{basePrice.toLocaleString()} AED</strong>
                   </div>
                   <div className="flex justify-between text-slate-600">
@@ -552,119 +576,318 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setPaymentMethod('card')}
-                className={`flex-1 py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition ${
-                  paymentMethod === 'card' ? 'border-cyan-600 bg-cyan-50/70 text-cyan-900' : 'border-slate-200 text-slate-600'
-                }`}
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>Corporate Card (Stripe UAE)</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setPaymentMethod('bank_transfer')}
-                className={`flex-1 py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition ${
+                className={`flex-1 py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   paymentMethod === 'bank_transfer' ? 'border-emerald-600 bg-emerald-50/70 text-emerald-900' : 'border-slate-200 text-slate-600'
                 }`}
               >
                 <Building2 className="w-4 h-4" />
                 <span>UAE Bank Transfer (IBAN)</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('card')}
+                className={`flex-1 py-2 px-3 rounded-lg border font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  paymentMethod === 'card' ? 'border-cyan-600 bg-cyan-50/70 text-cyan-900' : 'border-slate-200 text-slate-600'
+                }`}
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Online Card (Stripe Link)</span>
+              </button>
             </div>
 
-            {paymentMethod === 'card' ? (
+            {paymentMethod === 'bank_transfer' ? (
               <div className="space-y-3 font-sans">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Company / Cardholder Name</label>
-                  <input
-                    type="text"
-                    value={cardHolder}
-                    onChange={(e) => setCardHolder(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Corporate Card Number</label>
-                  <input
-                    type="text"
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono tracking-wider"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">Expires</label>
-                    <input
-                      type="text"
-                      defaultValue="12/28"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono"
-                    />
+                <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 space-y-1.5 font-mono">
+                  <div className="font-bold text-emerald-900 border-b border-emerald-200 pb-1">
+                    STEP 1: TRANSFER TO OFFICIAL UAE BANK ACCOUNT
                   </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">CVC / CVV</label>
-                    <input
-                      type="password"
-                      defaultValue="888"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono"
-                    />
-                  </div>
+                  <div>Beneficiary: <strong>{paymentSettings.beneficiaryName}</strong></div>
+                  <div>Bank: <strong>{paymentSettings.bankName}</strong></div>
+                  <div>IBAN: <strong className="text-emerald-800">{paymentSettings.iban}</strong></div>
+                  <div>SWIFT/BIC: <strong>{paymentSettings.swiftBic}</strong></div>
+                  <div>VAT TRN: <strong>{paymentSettings.vatTrn}</strong></div>
                 </div>
 
-                <div className="p-3 bg-cyan-50 rounded-lg border border-cyan-200 text-[11px] text-cyan-950 leading-relaxed font-sans">
-                  <strong>Where this payment goes:</strong> Handled securely by Stripe UAE / Checkout.com. Stripe collects the AED amount from the client's bank and automatically deposits it into your UAE Business Bank Account (Emirates NBD, FAB, ADCB, Wio) every 2 business days.
+                <button
+                  type="button"
+                  onClick={() => setTaxInvoiceModalOpen(true)}
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 font-mono shadow-2xs cursor-pointer"
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>View & Print Official Proforma Tax Invoice (PDF)</span>
+                </button>
+
+                <div className="pt-1">
+                  <label className="text-[11px] font-bold text-slate-800 block mb-1">
+                    STEP 2: Enter Bank Transfer Reference / Cheque No. <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. ENBD-TRX-9948271 or PDC Cheque #00412"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 block mt-1">
+                    Once submitted, the Platform Admin will verify the bank credit and activate your {planToCheckout.maxProjects}-project quota.
+                  </span>
                 </div>
               </div>
             ) : (
-              <div className="space-y-2.5 font-sans">
-                <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-950 space-y-1.5 font-mono">
-                  <div className="font-bold text-emerald-900 border-b border-emerald-200 pb-1">
-                    YOUR COMPANY UAE BANK ACCOUNT (DEPOSIT TARGET)
+              <div className="space-y-3 font-sans">
+                <div className="p-3.5 bg-cyan-50 rounded-xl border border-cyan-200 text-[11px] text-cyan-950 space-y-2">
+                  <div className="font-bold text-cyan-900">
+                    STEP 1: PAY SECURELY VIA STRIPE UAE CHECKOUT
                   </div>
-                  <div>Beneficiary: <strong>Your Switchgear SaaS Platform LLC</strong></div>
-                  <div>Bank: <strong>Emirates NBD Bank PJSC (Dubai)</strong></div>
-                  <div>IBAN: <strong className="text-emerald-800">AE29 0331 2345 6789 0123 456</strong></div>
-                  <div>SWIFT/BIC: <strong>EBILAEADXXX</strong></div>
-                  <div>VAT TRN: <strong>100234567800003</strong></div>
+                  <p className="leading-relaxed">
+                    For PCI-DSS security, card numbers are never stored on this server. Click below to complete your card payment on Stripe's hosted checkout page, then enter your receipt reference below.
+                  </p>
+                  {planToCheckout.stripeUrl ? (
+                    <a
+                      href={planToCheckout.stripeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 font-mono shadow-xs"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open Stripe Checkout for {planToCheckout.name} Plan</span>
+                    </a>
+                  ) : (
+                    <div className="p-2.5 bg-white/80 rounded border border-cyan-300 text-[11px] text-slate-700">
+                      <strong>Note:</strong> Online Stripe Payment Link is not yet configured by the Platform Administrator. Please use <strong>UAE Bank Transfer (IBAN)</strong> or contact <strong>{paymentSettings.supportEmail}</strong>.
+                    </div>
+                  )}
                 </div>
-                <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
-                  The client transfers directly from their UAE corporate bank account or issues a Post-Dated Cheque (PDC). 100% of the funds land directly in your bank account with 0% gateway commission.
-                </p>
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setTaxInvoiceModalOpen(true)}
-                    className="w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 font-mono shadow-2xs"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>View & Download UAE Tax Invoice (FTA Compliant)</span>
-                  </button>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-800 block mb-1">
+                    STEP 2: Enter Stripe Receipt / Transaction ID <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. pi_3Q8xK2LkdIwHu7ix or Stripe Receipt #1842-9012"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 text-xs font-mono focus:ring-2 focus:ring-cyan-500 outline-none"
+                  />
                 </div>
               </div>
             )}
 
             {/* Action buttons */}
-            <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100 font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 font-mono">
+              {isPlatformAdmin ? (
+                <button
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={() => handleSubmitPaymentRequest(true)}
+                  className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 rounded-lg font-bold text-[11px] transition cursor-pointer"
+                  title="Platform Admin Only: Activate immediately without waiting"
+                >
+                  ⚡ Admin Instant Activate
+                </button>
+              ) : (
+                <div />
+              )}
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCheckoutModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={() => handleSubmitPaymentRequest(false)}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isProcessingPayment ? (
+                    <span>Submitting...</span>
+                  ) : (
+                    <span>Submit Payment Reference</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PLATFORM ADMIN BANK & STRIPE CONFIGURATION MODAL */}
+      {showAdminSettingsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 font-mono text-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-50 text-cyan-800 border border-cyan-200 uppercase">
+                  Platform Owner Configuration
+                </span>
+                <h3 className="text-base font-bold text-slate-900 mt-1">
+                  Your UAE Bank Account, Tax Details & Stripe Payment Links
+                </h3>
+              </div>
               <button
-                type="button"
-                onClick={() => setCheckoutModalOpen(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-50 transition"
+                onClick={() => setShowAdminSettingsModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isProcessingPayment}
-                onClick={handleConfirmCheckout}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition shadow-xs flex items-center gap-1.5"
-              >
-                {isProcessingPayment ? (
-                  <span>Authorizing Payment...</span>
-                ) : (
-                  <span>Confirm & Activate Subscription</span>
-                )}
+                ✕
               </button>
             </div>
+
+            <form onSubmit={handleSavePaymentSettings} className="space-y-4 font-sans">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Beneficiary Company Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.beneficiaryName}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, beneficiaryName: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">UAE Bank Name & Branch</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.bankName}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, bankName: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">UAE IBAN Number</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.iban}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, iban: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">SWIFT / BIC Code</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.swiftBic}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, swiftBic: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Supplier VAT TRN (15 digits)</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.vatTrn}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, vatTrn: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Free Trial Project Quota (New Signups)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    required
+                    value={settingsForm.trialProjectLimit}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, trialProjectLimit: Number(e.target.value) || 2 })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Billing Support Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={settingsForm.supportEmail}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, supportEmail: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Billing Support Phone / WhatsApp</label>
+                  <input
+                    type="text"
+                    required
+                    value={settingsForm.supportPhone}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, supportPhone: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 space-y-3">
+                <h4 className="text-xs font-bold text-slate-900 font-mono">
+                  Optional: Stripe Payment Links (from dashboard.stripe.com/payment-links)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">Starter Plan (299 AED) Stripe URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://buy.stripe.com/..."
+                      value={settingsForm.stripeStarterUrl}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, stripeStarterUrl: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">Professional Plan (499 AED) Stripe URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://buy.stripe.com/..."
+                      value={settingsForm.stripeProfessionalUrl}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, stripeProfessionalUrl: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">Advanced Plan (999 AED) Stripe URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://buy.stripe.com/..."
+                      value={settingsForm.stripeAdvancedUrl}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, stripeAdvancedUrl: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">Business Plan (1999 AED) Stripe URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://buy.stripe.com/..."
+                      value={settingsForm.stripeBusinessUrl}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, stripeBusinessUrl: e.target.value })}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 font-mono">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminSettingsModal(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-bold shadow-xs cursor-pointer"
+                >
+                  Save Payment & Bank Settings
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -682,7 +905,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-2xs hover:bg-slate-800 transition"
+                  className="px-3 py-1.5 bg-slate-900 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-2xs hover:bg-slate-800 transition cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Print / Save PDF</span>
@@ -701,22 +924,22 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
             <div className="space-y-6 text-slate-800">
               <div className="flex justify-between items-start border-b border-slate-200 pb-4">
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight text-slate-900">TAX INVOICE</h2>
-                  <div className="text-sm font-bold text-slate-500 font-sans">فاتورة ضريبية</div>
+                  <h2 className="text-xl font-bold tracking-tight text-slate-900">PROFORMA TAX INVOICE</h2>
+                  <div className="text-sm font-bold text-slate-500 font-sans">فاتورة ضريبية مبدئية</div>
                   <div className="text-[11px] text-slate-500 mt-1 font-mono">
-                    Invoice No: <strong className="text-slate-900">TAX-INV-2026-0089</strong>
+                    Invoice No: <strong className="text-slate-900">TAX-INV-2026-{company.companyCode}</strong>
                   </div>
                   <div className="text-[11px] text-slate-500 font-mono">
-                    Issue Date: <strong>10-Oct-2026</strong> • Supply Date: <strong>10-Oct-2026</strong>
+                    Issue Date: <strong>{new Date().toISOString().slice(0, 10)}</strong>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs font-bold text-cyan-900">LV Switchgear Estimator SaaS LLC</div>
-                  <div className="text-[10px] text-slate-500 font-sans">Al Quoz Industrial Area 4, Plot 598-123</div>
-                  <div className="text-[10px] text-slate-500 font-sans">P.O. Box 48291, Dubai, United Arab Emirates</div>
+                  <div className="text-xs font-bold text-cyan-900">{paymentSettings.beneficiaryName}</div>
+                  <div className="text-[10px] text-slate-500 font-sans">United Arab Emirates</div>
+                  <div className="text-[10px] text-slate-500 font-sans">{paymentSettings.supportEmail} • {paymentSettings.supportPhone}</div>
                   <div className="text-[11px] font-bold text-slate-900 mt-1 font-mono">
-                    Supplier TRN: 100234567800003
+                    Supplier TRN: {paymentSettings.vatTrn}
                   </div>
                 </div>
               </div>
@@ -731,8 +954,8 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Customer Tax Details</span>
-                  <div className="text-[11px] text-slate-700">Customer TRN: <strong className="font-mono text-slate-900">{company.vatTrn || '100234567800003'}</strong></div>
-                  <div className="text-[11px] text-slate-700">Trade License: <strong className="font-mono text-slate-900">{company.tradeLicenseNo || 'CN-1029384'}</strong></div>
+                  <div className="text-[11px] text-slate-700">Customer TRN: <strong className="font-mono text-slate-900">{company.vatTrn || 'Pending'}</strong></div>
+                  <div className="text-[11px] text-slate-700">Trade License: <strong className="font-mono text-slate-900">{company.tradeLicenseNo || 'Pending'}</strong></div>
                   <div className="text-[11px] text-slate-700">Tenant Code: <strong className="font-mono text-cyan-900">{company.companyCode}</strong></div>
                 </div>
               </div>
@@ -756,7 +979,7 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
                         {planToCheckout?.name || 'Professional'} Tier Cloud License ({billingCycle})
                       </div>
                       <div className="text-[10px] text-slate-500 font-sans">
-                        Full LV switchgear panel estimation, SLD CAD studio, and multi-user tenant quota
+                        Includes {planToCheckout?.maxProjects || 50} active projects quota, SLD CAD studio, and {planToCheckout?.maxUsers || 5} user seats
                       </div>
                     </td>
                     <td className="py-3 text-center">1</td>
@@ -795,12 +1018,12 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
               {/* Payment Settlement Instructions */}
               <div className="p-4 bg-emerald-50/60 rounded-xl border border-emerald-200 text-[11px] space-y-1">
                 <span className="font-bold text-emerald-950 uppercase block">DIRECT BANK TRANSFER SETTLEMENT INSTRUCTIONS</span>
-                <div className="text-slate-700">Beneficiary: <strong>LV Switchgear Estimator SaaS LLC</strong></div>
-                <div className="text-slate-700">Bank Name: <strong>Emirates NBD Bank PJSC (Dubai)</strong></div>
-                <div className="text-slate-700">Account / IBAN: <strong className="font-mono text-emerald-900">AE29 0331 2345 6789 0123 456</strong></div>
-                <div className="text-slate-700">SWIFT / BIC Code: <strong className="font-mono">EBILAEADXXX</strong></div>
+                <div className="text-slate-700">Beneficiary: <strong>{paymentSettings.beneficiaryName}</strong></div>
+                <div className="text-slate-700">Bank Name: <strong>{paymentSettings.bankName}</strong></div>
+                <div className="text-slate-700">Account / IBAN: <strong className="font-mono text-emerald-900">{paymentSettings.iban}</strong></div>
+                <div className="text-slate-700">SWIFT / BIC Code: <strong className="font-mono">{paymentSettings.swiftBic}</strong></div>
                 <div className="text-slate-500 font-sans text-[10px] pt-1">
-                  * Please quote Invoice Reference <code className="font-mono text-slate-900">TAX-INV-2026-0089</code> in your bank transfer narration or remittance advice.
+                  * Please quote Invoice Reference <code className="font-mono text-slate-900">TAX-INV-2026-{company.companyCode}</code> in your bank transfer narration and submit the transaction reference in the portal.
                 </div>
               </div>
             </div>

@@ -124,6 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const current = titles[currentView] || { title: 'LV Switchgear Estimator', subtitle: '' };
+  const isPlatformAdmin = currentUser?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 shadow-xs">
@@ -135,8 +136,8 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2.5">
-        {/* Quick Client & Approval Counter Pill */}
-        {onNavigateToClientApprovals && (
+        {/* Quick Client & Approval Counter Pill (Platform Admin Only) */}
+        {isPlatformAdmin && onNavigateToClientApprovals && (
           <button
             onClick={onNavigateToClientApprovals}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer border ${
@@ -148,11 +149,6 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Building2 className={`w-3.5 h-3.5 ${currentView === 'client_approvals' ? 'text-white' : 'text-emerald-700'}`} />
             <span className="hidden sm:inline">Clients &amp; Approvals</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-              currentView === 'client_approvals' ? 'bg-cyan-900 text-white' : 'bg-emerald-200 text-emerald-900'
-            }`}>
-              5 Registered
-            </span>
           </button>
         )}
 
@@ -160,9 +156,9 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenAuthModal && (
           <div className="flex items-center gap-1.5">
             <button
-              onClick={onOpenAuthModal}
+              onClick={isPlatformAdmin ? onOpenAuthModal : undefined}
               className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-300 rounded-lg text-xs transition shadow-2xs font-mono"
-              title="SaaS User Session & Multi-Tenant Switcher"
+              title="Active Authenticated Tenant Session"
             >
               <div className="w-5 h-5 rounded-full bg-cyan-600 text-white flex items-center justify-center font-bold text-[10px]">
                 {currentUser?.fullName?.charAt(0) || 'U'}
@@ -174,18 +170,20 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="text-[9px] text-slate-500 font-mono flex items-center gap-1">
                   <span className="text-cyan-800 font-semibold">{currentCompany?.companyCode || 'TENANT'}</span>
                   <span>•</span>
-                  <span className="text-emerald-700 font-bold">{currentUser?.role?.replace('_', ' ') || 'USER'}</span>
+                  <span className="text-emerald-700 font-bold">{currentCompany?.plan || 'TRIAL'}</span>
                 </div>
               </div>
-              <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-bold ml-1 font-mono">
-                Switch
-              </span>
+              {isPlatformAdmin && (
+                <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-bold ml-1 font-mono">
+                  Switch
+                </span>
+              )}
             </button>
 
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors shadow-2xs"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors shadow-2xs cursor-pointer"
                 title="Log out and return to Login Screen"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -195,8 +193,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        {/* Project Manual & PDF Architecture button */}
-        {onOpenDocumentation && (
+        {/* Project Manual & PDF Architecture button (Platform Admin Only) */}
+        {isPlatformAdmin && onOpenDocumentation && (
           <button
             onClick={onOpenDocumentation}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 border border-blue-500 rounded-md transition-all shadow-2xs"
@@ -207,15 +205,17 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* SQL Architecture shortcut */}
-        <button
-          onClick={onOpenArchitecture}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-md transition-colors"
-          title="View SQL Server Scripts & EF Core Architecture"
-        >
-          <Database className="w-3.5 h-3.5 text-cyan-700" />
-          <span>SQL Scripts</span>
-        </button>
+        {/* SQL Architecture shortcut (Platform Admin Only) */}
+        {isPlatformAdmin && (
+          <button
+            onClick={onOpenArchitecture}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 rounded-md transition-colors"
+            title="View SQL Server Scripts & EF Core Architecture"
+          >
+            <Database className="w-3.5 h-3.5 text-cyan-700" />
+            <span>SQL Scripts</span>
+          </button>
+        )}
 
         {/* Quick Add Component */}
         <button
@@ -244,14 +244,16 @@ export const Header: React.FC<HeaderProps> = ({
           <Download className="w-4 h-4" />
         </button>
 
-        {/* Reset Data */}
-        <button
-          onClick={onResetData}
-          className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors"
-          title="Reset to Initial Seed Data"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
+        {/* Reset Data (Platform Admin Only) */}
+        {isPlatformAdmin && (
+          <button
+            onClick={onResetData}
+            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md border border-slate-200 transition-colors"
+            title="Reset to Initial Seed Data"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </header>
   );

@@ -70,6 +70,9 @@ import { CompanySettingsView } from './components/saas/CompanySettingsView';
 import { FacebookLoginScreen } from './components/auth/FacebookLoginScreen';
 import { PredefinedAssembliesView } from './components/assemblies/PredefinedAssembliesView';
 import { ProjectDocumentationModal } from './components/documentation/ProjectDocumentationModal';
+import { ClientCompaniesAndApprovalsView } from './components/admin/ClientCompaniesAndApprovalsView';
+import { authApprovalService, PLAN_LIMITS } from './services/authApprovalService';
+import { Lock, Sparkles, AlertCircle, CreditCard } from 'lucide-react';
 import { auth } from './lib/firebase';
 import { signOut } from 'firebase/auth';
 import { apiClient } from './services/apiClient';
@@ -102,6 +105,8 @@ export default function App() {
       defaultVatPercent: 5.00,
       plan: 'PROFESSIONAL',
       subscriptionStatus: 'ACTIVE',
+      maxProjects: 50,
+      maxUsers: 5,
     };
   });
 
@@ -130,6 +135,7 @@ export default function App() {
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [paywallReason, setPaywallReason] = useState<'quota' | 'export' | null>(null);
 
   // Application Data States
   const [components, setComponents] = useState<Component[]>([]);
@@ -183,6 +189,32 @@ export default function App() {
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
+  // Sync currentCompany plan & quota from authApprovalService directory if matched
+  const syncActiveCompanyRecord = useCallback(() => {
+    setCompany(prev => {
+      const allClients = authApprovalService.getClientCompanies();
+      const matched = allClients.find(
+        c => c.companyCode === prev.companyCode || c.companyName.toLowerCase() === prev.companyName.toLowerCase()
+      );
+      if (!matched) return prev;
+      const updated: CompanyTenant = {
+        ...prev,
+        plan: matched.plan,
+        maxProjects: matched.maxProjects,
+        maxUsers: matched.maxUsers,
+        requestedPlan: matched.requestedPlan,
+        paymentReference: matched.paymentReference,
+        subscriptionStatus: matched.requestedPlan
+          ? 'PENDING_APPROVAL'
+          : matched.plan === 'TRIAL'
+          ? 'TRIALING'
+          : 'ACTIVE',
+      };
+      localStorage.setItem('switchgear_saas_company', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
   // Load all data from storage
   const loadData = useCallback(() => {
     setComponents(storageService.getComponents());
@@ -212,16 +244,24 @@ export default function App() {
           setActivePanels(panels);
           setActiveQuotation(storageService.getQuotationByProject(found.projectID));
           setActiveBOM(storageService.generateBOMForProject(found.projectID));
+        } else {
+          setActivePanels([]);
+          setActiveQuotation(undefined);
+          setActiveBOM([]);
         }
         return found;
       }
+      setActivePanels([]);
+      setActiveQuotation(undefined);
+      setActiveBOM([]);
       return null;
     });
   }, []);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    syncActiveCompanyRecord();
+  }, [loadData, syncActiveCompanyRecord]);
 
   // Phase 2 Project Navigation Handlers
   const handleSelectProjectForEstimation = (proj: Project) => {
@@ -313,11 +353,18 @@ export default function App() {
     }
   };
 
-  // Phase 2 Project CRUD
+  const maxProjectsAllowed = company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2;
+
+  // Phase 2 Project CRUD (with strict Estimation Quota check)
   const handleSaveProject = (projectData: any) => {
     if (projectData.projectID) {
       storageService.updateProject(projectData);
     } else {
+      if (projects.length >= maxProjectsAllowed) {
+        setIsProjectModalOpen(false);
+        setPaywallReason('quota');
+        return;
+      }
       const newProj = storageService.addProject(projectData);
       setActiveProject(newProj);
     }
@@ -474,8 +521,12 @@ export default function App() {
     loadData();
   };
 
-  // Export CSV
+  // Export CSV (gated on Free Trial)
   const handleExportCSV = () => {
+    if (company.plan === 'TRIAL') {
+      setPaywallReason('export');
+      return;
+    }
     if (currentView === 'prices') {
       exportPricesToCSV(prices);
     } else {
@@ -492,17 +543,52 @@ export default function App() {
   };
 
   // Handlers for SaaS Subscription & Company Profile
-  const handleUpgradePlan = async (newPlan: SaaSPlan, billingCycle: 'MONTHLY' | 'ANNUAL') => {
+  const handleUpgradePlan = async (
+    newPlan: SaaSPlan,
+    billingCycle: 'MONTHLY' | 'ANNUAL',
+    paymentRef?: string,
+    instantActivate?: boolean
+  ) => {
+    const limits = PLAN_LIMITS[newPlan] || PLAN_LIMITS.PROFESSIONAL;
+    if (instantActivate) {
+      authApprovalService.updateCompanyPlanAndQuota(company.companyCode, newPlan, limits.maxProjects);
+      const updatedCompany: CompanyTenant = {
+        ...company,
+        plan: newPlan,
+        maxProjects: limits.maxProjects,
+        maxUsers: limits.maxUsers,
+        requestedPlan: undefined,
+        paymentReference: paymentRef,
+        subscriptionStatus: 'ACTIVE',
+      };
+      setCompany(updatedCompany);
+      localStorage.setItem('switchgear_saas_company', JSON.stringify(updatedCompany));
+      setSubscription(prev => prev ? { ...prev, plan: newPlan, billingCycle, maxProjects: limits.maxProjects, maxUsers: limits.maxUsers } : null);
+    } else {
+      authApprovalService.submitPaymentUpgradeRequest(
+        company.companyCode,
+        newPlan,
+        paymentRef || 'BANK-TRANSFER-PENDING'
+      );
+      const updatedCompany: CompanyTenant = {
+        ...company,
+        requestedPlan: newPlan,
+        paymentReference: paymentRef,
+        subscriptionStatus: 'PENDING_APPROVAL',
+      };
+      setCompany(updatedCompany);
+      localStorage.setItem('switchgear_saas_company', JSON.stringify(updatedCompany));
+    }
+
     try {
-      const res = await apiClient.post('/api/tenant/subscription/change-plan', { plan: newPlan, billingCycle });
-      if (res) {
-        setSubscription(res);
-        setCompany(prev => ({ ...prev, plan: newPlan }));
-      }
+      await apiClient.post('/api/tenant/subscription/change-plan', {
+        plan: newPlan,
+        billingCycle,
+        paymentReference: paymentRef,
+        instantActivate: !!instantActivate,
+      });
     } catch (e) {
-      console.warn('API update failed, updating state locally:', e);
-      setCompany(prev => ({ ...prev, plan: newPlan }));
-      setSubscription(prev => prev ? { ...prev, plan: newPlan, billingCycle } : null);
+      // Handled locally via authApprovalService
     }
   };
 
@@ -510,19 +596,28 @@ export default function App() {
     try {
       const res = await apiClient.put('/api/tenant/company', updated);
       if (res) {
-        setCompany(prev => ({ ...prev, ...res }));
+        setCompany(prev => {
+          const next = { ...prev, ...res };
+          localStorage.setItem('switchgear_saas_company', JSON.stringify(next));
+          return next;
+        });
       }
     } catch (e) {
-      console.warn('API update failed, updating state locally:', e);
-      setCompany(prev => ({ ...prev, ...updated }));
+      setCompany(prev => {
+        const next = { ...prev, ...updated };
+        localStorage.setItem('switchgear_saas_company', JSON.stringify(next));
+        return next;
+      });
     }
   };
 
   const handleLoginSuccess = (user: SaaSUser, tenantCompany: CompanyTenant) => {
-    setCurrentUser(user);
-    setCompany(tenantCompany);
     localStorage.setItem('switchgear_saas_user', JSON.stringify(user));
     localStorage.setItem('switchgear_saas_company', JSON.stringify(tenantCompany));
+    setCurrentUser(user);
+    setCompany(tenantCompany);
+    // Load isolated tenant projects immediately after setting switchgear_saas_company
+    loadData();
   };
 
   const handleLogout = async () => {
@@ -537,38 +632,11 @@ export default function App() {
   };
 
   const handleSwitchTenant = (newCompany: CompanyTenant, newUser: SaaSUser) => {
-    setCompany(newCompany);
-    setCurrentUser(newUser);
     localStorage.setItem('switchgear_saas_user', JSON.stringify(newUser));
     localStorage.setItem('switchgear_saas_company', JSON.stringify(newCompany));
-    if (newCompany.id === 2) {
-      // Demonstrating strict multi-tenant isolation: Tenant 2 sees only their own tenders
-      setProjects([
-        {
-          projectID: 201,
-          projectCode: 'GULF-2026-001',
-          projectName: 'Musaffah 33/11kV Substation Auxiliary PCC & MCC',
-          clientName: 'Abu Dhabi Distribution Company (ADDC)',
-          consultantName: 'KEO International Consultants',
-          location: 'Musaffah Industrial, Abu Dhabi',
-          authority: 'ADDC',
-          status: 'IN_ESTIMATION',
-          createdDate: '2026-10-02',
-          dueDate: '2026-11-20',
-          currency: 'AED',
-          assignedEstimator: 'Eng. Suresh Kumar',
-          targetMarginPercent: 18.5,
-          totalCost: 345000,
-          sellingPrice: 423312,
-          panelsCount: 4,
-          primaryOEM: 'ABB',
-          copperRatePerKg: 42.50,
-        }
-      ]);
-      setActiveProject(null);
-    } else {
-      loadData();
-    }
+    setCompany(newCompany);
+    setCurrentUser(newUser);
+    loadData();
   };
 
   // --------------------------------------------------------------------------
@@ -610,6 +678,7 @@ export default function App() {
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
           onLogout={handleLogout}
           onOpenDocumentation={() => setIsDocModalOpen(true)}
+          onNavigateToClientApprovals={() => setCurrentView('client_approvals')}
           onOpenAddComponent={() => {
             setComponentToEdit(null);
             setIsComponentFormOpen(true);
@@ -711,6 +780,10 @@ export default function App() {
               onSelectProjectForBOM={handleSelectProjectForBOM}
               onSelectProjectForSLD={(p) => handleSelectProjectForSLD(p)}
               onOpenNewProject={() => {
+                if (projects.length >= maxProjectsAllowed) {
+                  setPaywallReason('quota');
+                  return;
+                }
                 setProjectToEdit(null);
                 setIsProjectModalOpen(true);
               }}
@@ -759,8 +832,10 @@ export default function App() {
               <BOMView
                 project={activeProject}
                 bomItems={activeBOM}
+                companyPlan={company.plan}
                 onBackToEstimation={() => setCurrentView('workspace')}
                 onNavigateToQuotation={() => setCurrentView('quotations')}
+                onRequireUpgrade={() => setPaywallReason('export')}
               />
             ) : (
               <div className="bg-white border border-slate-200 p-8 rounded-xl text-center text-slate-600 font-mono shadow-xs">
@@ -786,6 +861,7 @@ export default function App() {
                 company={company}
                 onBackToEstimation={() => setCurrentView('workspace')}
                 onSaveQuotation={handleSaveQuotation}
+                onRequireUpgrade={() => setPaywallReason('export')}
               />
             ) : (
               <div className="bg-white border border-slate-200 p-8 rounded-xl text-center text-slate-600 font-mono shadow-xs">
@@ -890,6 +966,17 @@ export default function App() {
             <LabourRatesView labourRates={labourRates} />
           )}
 
+          {currentView === 'client_approvals' && (
+            <ClientCompaniesAndApprovalsView
+              onNavigateToBureau={() => setCurrentView('bureau')}
+              onNavigateToProjects={() => setCurrentView('projects')}
+              onClientDataUpdated={() => {
+                syncActiveCompanyRecord();
+                loadData();
+              }}
+            />
+          )}
+
           {currentView === 'architecture' && (
             <ArchitectureView />
           )}
@@ -907,6 +994,8 @@ export default function App() {
             <SaaSBillingView
               company={company}
               subscription={subscription}
+              currentUser={currentUser as any}
+              projectsCount={projects.length}
               onUpgradePlan={handleUpgradePlan}
             />
           )}
@@ -1031,6 +1120,12 @@ export default function App() {
         onSignOut={handleLogout}
       />
 
+      {/* Project Architecture & PDF Manual Modal */}
+      <ProjectDocumentationModal
+        isOpen={isDocModalOpen}
+        onClose={() => setIsDocModalOpen(false)}
+      />
+
       {/* Commercial Intelligence: Log Follow-up Activity Modal */}
       <NewFollowUpModal
         isOpen={isFollowUpModalOpen}
@@ -1046,6 +1141,71 @@ export default function App() {
           setSelectedQuoteForFollowUp(null);
         }}
       />
+
+      {/* Subscription Quota & Feature Paywall Modal */}
+      {paywallReason && (
+        <div className="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 font-mono text-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                    {paywallReason === 'quota' ? 'Estimation Quota Reached' : 'Paid License Required'}
+                  </span>
+                  <h3 className="text-sm font-bold text-slate-900 mt-1">
+                    {paywallReason === 'quota'
+                      ? `You Have Used ${projects.length} / ${maxProjectsAllowed} Estimations`
+                      : 'Commercial PDF & Excel Exports Require a Paid Plan'}
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setPaywallReason(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 font-sans text-xs text-slate-700 leading-relaxed space-y-2">
+              {paywallReason === 'quota' ? (
+                <p>
+                  Your current <strong>{company.plan}</strong> plan includes a maximum of{' '}
+                  <strong>{maxProjectsAllowed} active estimation projects</strong>. Upgrade to{' '}
+                  <strong>Starter (10 projects)</strong>, <strong>Professional (50 projects)</strong>, or{' '}
+                  <strong>Advanced (200 projects)</strong> to continue creating new tenders.
+                </p>
+              ) : (
+                <p>
+                  Your account is currently on the <strong>Free Trial ({maxProjectsAllowed} Projects)</strong> tier. You can size panels and preview quotations in-app, but downloading official <strong>PDF Client Proposals</strong> and <strong>Excel/CSV Bills of Materials</strong> requires an active paid subscription.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setPaywallReason(null)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 cursor-pointer"
+              >
+                Maybe Later
+              </button>
+              <button
+                onClick={() => {
+                  setPaywallReason(null);
+                  setCurrentView('saas_billing');
+                }}
+                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>View Subscription Plans (AED)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

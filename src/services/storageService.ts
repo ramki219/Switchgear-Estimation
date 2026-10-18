@@ -753,19 +753,98 @@ class StorageService {
   }
 
   // ==========================================
+  // TENANT ISOLATION HELPER
+  // ==========================================
+  private getActiveTenantCode(): string {
+    try {
+      const raw = localStorage.getItem('switchgear_saas_company');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.companyCode) {
+          return parsed.companyCode;
+        }
+      }
+    } catch {}
+    return 'EMIRATES-LV-01';
+  }
+
+  private isDefaultShowcaseTenant(code: string): boolean {
+    return code === 'EMIRATES-LV-01' || code === 'CLI-AGS-01';
+  }
+
+  private getTenantScopedKey(baseKey: string): string {
+    const code = this.getActiveTenantCode();
+    if (this.isDefaultShowcaseTenant(code)) {
+      return baseKey;
+    }
+    return `${baseKey}_${code}`;
+  }
+
+  private syncTenantUsageToDirectory(projectsList: Project[]): void {
+    try {
+      const code = this.getActiveTenantCode();
+      const raw = localStorage.getItem('lv_estimator_client_companies_v2');
+      if (!raw) return;
+      const companies = JSON.parse(raw);
+      if (!Array.isArray(companies)) return;
+      const idx = companies.findIndex((c: any) => c.companyCode === code);
+      if (idx !== -1) {
+        companies[idx].associatedProjectsCount = projectsList.length;
+        companies[idx].totalPipelineValueAed = projectsList.reduce((acc, p) => acc + (p.sellingPrice || 0), 0);
+        localStorage.setItem('lv_estimator_client_companies_v2', JSON.stringify(companies));
+      }
+    } catch {}
+  }
+
+  // ==========================================
   // PHASE 2: PROJECTS & ENQUIRIES
   // ==========================================
   getProjects(): Project[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PROJECTS);
+    const key = this.getTenantScopedKey(STORAGE_KEYS.PROJECTS);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      this.saveProjects(INITIAL_PROJECTS);
-      return INITIAL_PROJECTS;
+      const code = this.getActiveTenantCode();
+      if (this.isDefaultShowcaseTenant(code)) {
+        this.saveProjects(INITIAL_PROJECTS);
+        return INITIAL_PROJECTS;
+      }
+      if (code === 'GULF-PANELS-02') {
+        const gulfSeed: Project[] = [
+          {
+            projectID: 201,
+            projectCode: 'GULF-2026-001',
+            projectName: 'Musaffah 33/11kV Substation Auxiliary PCC & MCC',
+            clientName: 'Abu Dhabi Distribution Company (ADDC)',
+            consultantName: 'KEO International Consultants',
+            location: 'Musaffah Industrial, Abu Dhabi',
+            authority: 'ADDC',
+            status: 'IN_ESTIMATION',
+            createdDate: '2026-10-02',
+            dueDate: '2026-11-20',
+            currency: 'AED',
+            assignedEstimator: 'Eng. Suresh Kumar',
+            targetMarginPercent: 18.5,
+            totalCost: 345000,
+            sellingPrice: 423312,
+            panelsCount: 0,
+            primaryOEM: 'ABB',
+            copperRatePerKg: 42.50,
+          },
+        ];
+        this.saveProjects(gulfSeed);
+        return gulfSeed;
+      }
+      // New customer tenants start with a clean 0-project workspace
+      this.saveProjects([]);
+      return [];
     }
     return JSON.parse(raw);
   }
 
   saveProjects(data: Project[]): void {
-    localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(data));
+    const key = this.getTenantScopedKey(STORAGE_KEYS.PROJECTS);
+    localStorage.setItem(key, JSON.stringify(data));
+    this.syncTenantUsageToDirectory(data);
   }
 
   getProjectById(id: number): Project | undefined {
@@ -815,16 +894,23 @@ class StorageService {
   // PHASE 2: ESTIMATE PANELS & ENGINEERING SIZING
   // ==========================================
   getPanels(): EstimatePanel[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PANELS);
+    const key = this.getTenantScopedKey(STORAGE_KEYS.PANELS);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      this.savePanels(INITIAL_PANELS);
-      return INITIAL_PANELS;
+      const code = this.getActiveTenantCode();
+      if (this.isDefaultShowcaseTenant(code)) {
+        this.savePanels(INITIAL_PANELS);
+        return INITIAL_PANELS;
+      }
+      this.savePanels([]);
+      return [];
     }
     return JSON.parse(raw);
   }
 
   savePanels(data: EstimatePanel[]): void {
-    localStorage.setItem(STORAGE_KEYS.PANELS, JSON.stringify(data));
+    const key = this.getTenantScopedKey(STORAGE_KEYS.PANELS);
+    localStorage.setItem(key, JSON.stringify(data));
   }
 
   getPanelsByProject(projectID: number): EstimatePanel[] {
@@ -1085,16 +1171,23 @@ class StorageService {
   // PHASE 2: COMMERCIAL QUOTATIONS
   // ==========================================
   getQuotations(): Quotation[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.QUOTATIONS);
+    const key = this.getTenantScopedKey(STORAGE_KEYS.QUOTATIONS);
+    const raw = localStorage.getItem(key);
     if (!raw) {
-      this.saveQuotations(INITIAL_QUOTATIONS);
-      return INITIAL_QUOTATIONS;
+      const code = this.getActiveTenantCode();
+      if (this.isDefaultShowcaseTenant(code)) {
+        this.saveQuotations(INITIAL_QUOTATIONS);
+        return INITIAL_QUOTATIONS;
+      }
+      this.saveQuotations([]);
+      return [];
     }
     return JSON.parse(raw);
   }
 
   saveQuotations(data: Quotation[]): void {
-    localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(data));
+    const key = this.getTenantScopedKey(STORAGE_KEYS.QUOTATIONS);
+    localStorage.setItem(key, JSON.stringify(data));
   }
 
   getQuotationByProject(projectID: number): Quotation | undefined {

@@ -32,18 +32,22 @@ import {
   RegisteredClientCompany, 
   AppUserProfile, 
   UserRole, 
-  ApprovalStatus 
+  ApprovalStatus,
+  PLAN_LIMITS
 } from '../../services/authApprovalService';
+import { SaaSPlan } from '../../types';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
 interface ClientCompaniesAndApprovalsViewProps {
   onNavigateToBureau?: () => void;
   onNavigateToProjects?: () => void;
+  onClientDataUpdated?: () => void;
 }
 
 export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprovalsViewProps> = ({
   onNavigateToBureau,
-  onNavigateToProjects
+  onNavigateToProjects,
+  onClientDataUpdated
 }) => {
   const [activeTab, setActiveTab] = useState<'companies' | 'approvals' | 'guide'>('companies');
   const [companies, setCompanies] = useState<RegisteredClientCompany[]>(() => authApprovalService.getClientCompanies());
@@ -51,9 +55,13 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | ApprovalStatus>('ALL');
   const [selectedCompany, setSelectedCompany] = useState<RegisteredClientCompany | null>(null);
+  const [customQuotaInput, setCustomQuotaInput] = useState<number>(50);
+  const [selectedPlanInput, setSelectedPlanInput] = useState<SaaSPlan>('PROFESSIONAL');
   const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [showHowToGuide, setShowHowToGuide] = useState(true);
+  const [showHowToGuide, setShowHowToGuide] = useState(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [passwordEditUid, setPasswordEditUid] = useState<string | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
 
   // New Company Form State
   const [newCompanyForm, setNewCompanyForm] = useState({
@@ -66,12 +74,14 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     phone: '',
     vatTrn: '',
     targetAuthority: 'DEWA / SEWA',
-    plan: 'PROFESSIONAL' as 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE',
+    plan: 'STARTER' as SaaSPlan,
+    initialPassword: 'Client@2026',
   });
 
   const refreshData = () => {
     setCompanies(authApprovalService.getClientCompanies());
     setUsers(authApprovalService.getUsers());
+    if (onClientDataUpdated) onClientDataUpdated();
   };
 
   const showNotification = (msg: string) => {
@@ -82,7 +92,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
   // Metrics
   const totalCompaniesCount = companies.length;
   const approvedCompaniesCount = companies.filter(c => c.status === 'APPROVED').length;
-  const pendingCompaniesCount = companies.filter(c => c.status === 'PENDING').length;
+  const pendingCompaniesCount = companies.filter(c => c.status === 'PENDING' || !!c.requestedPlan).length;
   const totalPipelineValue = companies.reduce((acc, c) => acc + (c.totalPipelineValueAed || 0), 0);
 
   const pendingUsersCount = users.filter(u => !u.approved).length;
@@ -108,7 +118,30 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     const updated = authApprovalService.approveCompany(companyId, 'Admin');
     if (updated) {
       refreshData();
-      showNotification(`Company "${updated.companyName}" successfully approved!`);
+      showNotification(`Company "${updated.companyName}" & associated users approved!`);
+    }
+  };
+
+  const handleApprovePlanUpgrade = (company: RegisteredClientCompany) => {
+    if (!company.requestedPlan) return;
+    const updated = authApprovalService.updateCompanyPlanAndQuota(company.id, company.requestedPlan);
+    if (updated) {
+      refreshData();
+      showNotification(`Verified payment (${company.paymentReference}) & upgraded "${updated.companyName}" to ${updated.plan} (${updated.maxProjects} projects)!`);
+    }
+  };
+
+  const handleSaveCompanyPlanAndQuota = () => {
+    if (!selectedCompany) return;
+    const updated = authApprovalService.updateCompanyPlanAndQuota(
+      selectedCompany.id,
+      selectedPlanInput,
+      customQuotaInput
+    );
+    if (updated) {
+      setSelectedCompany(updated);
+      refreshData();
+      showNotification(`Updated "${updated.companyName}" to ${updated.plan} plan with ${updated.maxProjects} max projects quota.`);
     }
   };
 
@@ -145,6 +178,17 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     }
   };
 
+  const handleSaveUserPassword = (uid: string) => {
+    if (!newPasswordInput.trim()) return;
+    const updated = authApprovalService.updateUserPassword(uid, newPasswordInput.trim());
+    if (updated) {
+      setPasswordEditUid(null);
+      setNewPasswordInput('');
+      refreshData();
+      showNotification(`Password updated for ${updated.email}`);
+    }
+  };
+
   // Register company submit
   const handleRegisterCompanySubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,9 +198,23 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     }
 
     const created = authApprovalService.registerCompany(newCompanyForm);
+    // Also approve & create login user credentials so the client can sign in immediately
+    authApprovalService.approveCompany(created.id, 'Admin');
+    const createdUser = authApprovalService.registerUserSignup(
+      newCompanyForm.email,
+      newCompanyForm.contactPerson || newCompanyForm.companyName,
+      newCompanyForm.companyName,
+      'COMPANY_OWNER',
+      newCompanyForm.initialPassword || 'Client@2026',
+      created.companyCode
+    );
+    authApprovalService.approveUser(createdUser.uid, 'COMPANY_OWNER', 'Admin');
+
     setShowRegisterModal(false);
     refreshData();
-    showNotification(`New Company "${created.companyName}" registered (${created.companyCode}) under PENDING status!`);
+    showNotification(
+      `Client "${created.companyName}" (${created.companyCode}) created & approved! Login: ${newCompanyForm.email} / ${newCompanyForm.initialPassword}`
+    );
     
     // Reset form
     setNewCompanyForm({
@@ -169,7 +227,8 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
       phone: '',
       vatTrn: '',
       targetAuthority: 'DEWA / SEWA',
-      plan: 'PROFESSIONAL',
+      plan: 'STARTER',
+      initialPassword: 'Client@2026',
     });
   };
 
@@ -433,7 +492,10 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
 
           {/* Companies Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredCompanies.map(company => (
+            {filteredCompanies.map(company => {
+              const maxQuota = company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2;
+              const usedProjects = company.associatedProjectsCount || 0;
+              return (
               <div 
                 key={company.id}
                 className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:shadow-md transition flex flex-col justify-between"
@@ -441,9 +503,14 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                 <div>
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="font-mono text-[10px] text-cyan-700 font-bold bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
-                        {company.companyCode}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-cyan-700 font-bold bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                          {company.companyCode}
+                        </span>
+                        <span className="font-mono text-[10px] text-indigo-800 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                          {company.plan || 'TRIAL'}
+                        </span>
+                      </div>
                       <h3 className="font-bold text-slate-900 text-sm mt-1.5 leading-snug">
                         {company.companyName}
                       </h3>
@@ -467,6 +534,25 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                     </span>
                   </div>
 
+                  {/* Pending Plan Upgrade Banner */}
+                  {company.requestedPlan && (
+                    <div className="mt-3 p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-[11px] space-y-1.5">
+                      <div className="font-bold text-amber-900 flex items-center justify-between">
+                        <span>⚡ Upgrade Requested: {company.requestedPlan}</span>
+                      </div>
+                      <div className="font-mono text-[10px] text-amber-800">
+                        Payment Ref: <strong>{company.paymentReference || 'Submitted'}</strong>
+                      </div>
+                      <button
+                        onClick={() => handleApprovePlanUpgrade(company)}
+                        className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[11px] flex items-center justify-center gap-1 shadow-2xs transition cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Verify Payment & Activate {company.requestedPlan}</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div className="mt-3.5 space-y-1.5 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400 text-[11px]">Trade License:</span>
@@ -483,9 +569,11 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                       <span className="font-medium text-slate-800">{company.contactPerson}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400 text-[11px]">Authority Focus:</span>
-                      <span className="font-semibold text-cyan-800 bg-cyan-100/60 px-1.5 py-0.2 rounded text-[10px]">
-                        {company.targetAuthority}
+                      <span className="text-slate-400 text-[11px]">Estimation Quota:</span>
+                      <span className={`font-mono font-bold text-[11px] ${
+                        usedProjects >= maxQuota ? 'text-rose-600' : 'text-emerald-700'
+                      }`}>
+                        {usedProjects} / {maxQuota} Projects
                       </span>
                     </div>
                   </div>
@@ -505,8 +593,10 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                 {/* Card Bottom Actions */}
                 <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                   <div className="text-[11px]">
-                    <span className="text-slate-400">Projects: </span>
-                    <span className="font-bold font-mono text-slate-800">{company.associatedProjectsCount || 0}</span>
+                    <span className="text-slate-400">Pipeline: </span>
+                    <span className="font-bold font-mono text-slate-800">
+                      AED {((company.totalPipelineValueAed || 0) / 1000).toFixed(1)}k
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -528,17 +618,22 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                       </>
                     ) : (
                       <button
-                        onClick={() => setSelectedCompany(company)}
+                        onClick={() => {
+                          setSelectedCompany(company);
+                          setSelectedPlanInput(company.plan || 'TRIAL');
+                          setCustomQuotaInput(company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2);
+                        }}
                         className="text-cyan-700 hover:text-cyan-900 text-xs font-bold flex items-center gap-1 bg-cyan-50 hover:bg-cyan-100 px-2.5 py-1 rounded transition cursor-pointer"
                       >
-                        <span>View Dossier</span>
+                        <span>Manage Plan & Quota</span>
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
 
           {filteredCompanies.length === 0 && (
@@ -558,10 +653,10 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
             <div>
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-cyan-700" />
-                <span>User Login Approval Queue</span>
+                <span>User Login Credentials & Approval Queue</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Every newly registered user requires admin verification before accessing proprietary costing, BOM calculations, and quotations.
+                Manage customer login credentials, passwords, roles, and account approval status.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -576,11 +671,11 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100/70 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="py-2.5 px-3">User & Email</th>
+                  <th className="py-2.5 px-3">User & Login Email</th>
                   <th className="py-2.5 px-3">Associated Client Company</th>
+                  <th className="py-2.5 px-3">Login Password</th>
                   <th className="py-2.5 px-3">Assigned Role</th>
                   <th className="py-2.5 px-3">Approval Status</th>
-                  <th className="py-2.5 px-3">Registered On</th>
                   <th className="py-2.5 px-3 text-right">Admin Actions</th>
                 </tr>
               </thead>
@@ -594,6 +689,46 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                     <td className="py-3 px-3">
                       <div className="font-medium text-slate-800">{u.companyName || 'Independent / Not Linked'}</div>
                       <div className="text-[10px] text-slate-400 font-mono">{u.companyId || 'No ID'}</div>
+                    </td>
+                    <td className="py-3 px-3">
+                      {passwordEditUid === u.uid ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={newPasswordInput}
+                            onChange={(e) => setNewPasswordInput(e.target.value)}
+                            placeholder="New password"
+                            className="w-28 px-2 py-1 border border-slate-300 rounded text-[11px] font-mono"
+                          />
+                          <button
+                            onClick={() => handleSaveUserPassword(u.uid)}
+                            className="px-2 py-1 bg-emerald-600 text-white rounded text-[10px] font-bold"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setPasswordEditUid(null)}
+                            className="px-1.5 py-1 text-slate-500 text-[10px]"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <code className="text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono">
+                            {u.password || 'Client@2026'}
+                          </code>
+                          <button
+                            onClick={() => {
+                              setPasswordEditUid(u.uid);
+                              setNewPasswordInput(u.password || 'Client@2026');
+                            }}
+                            className="text-[10px] text-cyan-700 hover:underline font-semibold cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <select
@@ -616,9 +751,6 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                         {u.approved ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
                         {u.approved ? 'Approved' : 'Pending Approval'}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-[11px] text-slate-500 font-mono">
-                      {new Date(u.createdAt).toLocaleDateString()}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -863,30 +995,28 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Target Authority</label>
+                  <label className="block font-bold text-slate-700 mb-1">Subscription Plan</label>
                   <select
-                    value={newCompanyForm.targetAuthority}
-                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, targetAuthority: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                    value={newCompanyForm.plan}
+                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, plan: e.target.value as SaaSPlan })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
                   >
-                    <option value="DEWA / SEWA">DEWA / SEWA</option>
-                    <option value="DEWA">DEWA (Dubai)</option>
-                    <option value="SEWA">SEWA (Sharjah)</option>
-                    <option value="ADDC / AADC">ADDC / AADC (Abu Dhabi)</option>
-                    <option value="FEWA / Etihad WE">FEWA / Etihad WE</option>
+                    <option value="TRIAL">TRIAL (2 Projects)</option>
+                    <option value="STARTER">STARTER (10 Projects)</option>
+                    <option value="PROFESSIONAL">PROFESSIONAL (50 Projects)</option>
+                    <option value="ADVANCED">ADVANCED (200 Projects)</option>
+                    <option value="BUSINESS">BUSINESS (1000 Projects)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Requested Plan</label>
-                  <select
-                    value={newCompanyForm.plan}
-                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, plan: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
-                  >
-                    <option value="STARTER">STARTER</option>
-                    <option value="PROFESSIONAL">PROFESSIONAL</option>
-                    <option value="ENTERPRISE">ENTERPRISE</option>
-                  </select>
+                  <label className="block font-bold text-slate-700 mb-1">Initial Login Password *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCompanyForm.initialPassword}
+                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, initialPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono"
+                  />
                 </div>
               </div>
 
@@ -900,9 +1030,9 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                 </button>
                 <button
                   type="submit"
-                  className="bg-cyan-700 hover:bg-cyan-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-2xs"
+                  className="bg-cyan-700 hover:bg-cyan-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-2xs cursor-pointer"
                 >
-                  Submit Registration
+                  Create & Approve Client Account
                 </button>
               </div>
             </form>
@@ -910,7 +1040,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
         </div>
       )}
 
-      {/* COMPANY DOSSIER MODAL */}
+      {/* COMPANY DOSSIER & QUOTA MANAGEMENT MODAL */}
       {selectedCompany && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden animate-scale-in">
@@ -943,6 +1073,56 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                 </div>
               </div>
 
+              {/* Admin Plan & Estimation Quota Controls */}
+              <div className="p-3.5 bg-cyan-50/70 border border-cyan-200 rounded-xl space-y-3">
+                <div className="font-bold text-cyan-950 text-xs flex items-center justify-between">
+                  <span>Subscription Plan & Estimation Quota Control</span>
+                  <span className="font-mono text-[10px] bg-white px-2 py-0.5 rounded border border-cyan-200 text-cyan-800">
+                    Used: {selectedCompany.associatedProjectsCount || 0} Projects
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Active Plan Tier</label>
+                    <select
+                      value={selectedPlanInput}
+                      onChange={(e) => {
+                        const newPlan = e.target.value as SaaSPlan;
+                        setSelectedPlanInput(newPlan);
+                        setCustomQuotaInput(PLAN_LIMITS[newPlan]?.maxProjects || 10);
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
+                    >
+                      <option value="TRIAL">TRIAL (2 Projects)</option>
+                      <option value="STARTER">STARTER (10 Projects)</option>
+                      <option value="PROFESSIONAL">PROFESSIONAL (50 Projects)</option>
+                      <option value="ADVANCED">ADVANCED (200 Projects)</option>
+                      <option value="BUSINESS">BUSINESS (1000 Projects)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Max Estimations Quota</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={customQuotaInput}
+                      onChange={(e) => setCustomQuotaInput(Number(e.target.value) || 1)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveCompanyPlanAndQuota}
+                  className="w-full py-2 bg-cyan-700 hover:bg-cyan-800 text-white rounded-lg font-bold text-xs shadow-2xs transition cursor-pointer"
+                >
+                  Save Plan & Quota Allocation
+                </button>
+              </div>
+
               <div className="space-y-2 text-slate-700">
                 <div className="flex justify-between border-b border-slate-100 pb-1.5">
                   <span className="text-slate-500">Trade License:</span>
@@ -959,24 +1139,12 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                   <span className="font-medium">{selectedCompany.contactPerson}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                  <span className="text-slate-500">Email:</span>
+                  <span className="text-slate-500">Login Email:</span>
                   <span className="font-mono">{selectedCompany.email}</span>
                 </div>
                 <div className="flex justify-between border-b border-slate-100 pb-1.5">
                   <span className="text-slate-500">Phone:</span>
                   <span className="font-mono">{selectedCompany.phone}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                  <span className="text-slate-500">Address:</span>
-                  <span>{selectedCompany.address || `${selectedCompany.city}, ${selectedCompany.country}`}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                  <span className="text-slate-500">Authority:</span>
-                  <span className="font-bold text-cyan-700">{selectedCompany.targetAuthority}</span>
-                </div>
-                <div className="flex justify-between border-b border-slate-100 pb-1.5">
-                  <span className="text-slate-500">Active Projects:</span>
-                  <span className="font-mono font-bold text-slate-900">{selectedCompany.associatedProjectsCount || 0}</span>
                 </div>
                 <div className="flex justify-between pt-1">
                   <span className="text-slate-500">Total Pipeline:</span>
@@ -987,7 +1155,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
               <div className="pt-3 border-t border-slate-200 flex items-center justify-end">
                 <button
                   onClick={() => setSelectedCompany(null)}
-                  className="bg-cyan-700 text-white px-4 py-2 rounded-lg text-xs font-bold"
+                  className="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold cursor-pointer"
                 >
                   Close
                 </button>

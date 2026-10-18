@@ -11,15 +11,19 @@ import { exportBOMToCSV } from '../../services/exportService';
 interface BOMViewProps {
   project: Project;
   bomItems: ConsolidatedBOMItem[];
+  companyPlan?: string;
   onBackToEstimation: () => void;
   onNavigateToQuotation: () => void;
+  onRequireUpgrade?: () => void;
 }
 
 export const BOMView: React.FC<BOMViewProps> = ({
   project,
   bomItems,
+  companyPlan,
   onBackToEstimation,
   onNavigateToQuotation,
+  onRequireUpgrade,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
@@ -83,11 +87,17 @@ export const BOMView: React.FC<BOMViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => exportBOMToCSV(project.projectCode, bomItems)}
-            className="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold px-3.5 py-2 rounded-lg text-xs flex items-center gap-2 transition shadow-2xs"
+            onClick={() => {
+              if (companyPlan === 'TRIAL') {
+                if (onRequireUpgrade) onRequireUpgrade();
+                return;
+              }
+              exportBOMToCSV(project.projectCode, bomItems);
+            }}
+            className="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold px-3.5 py-2 rounded-lg text-xs flex items-center gap-2 transition shadow-2xs cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            <span>Export BOM (CSV)</span>
+            <span>{companyPlan === 'TRIAL' ? '🔒 Export BOM (Upgrade Required)' : 'Export BOM (CSV)'}</span>
           </button>
 
           <button

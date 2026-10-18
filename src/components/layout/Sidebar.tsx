@@ -83,6 +83,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50';
   };
 
+  const isPlatformAdmin = currentUser?.role === 'ADMIN' || (currentUser as any)?.saasRole === 'PLATFORM_ADMIN';
+  const maxProjects = currentCompany?.maxProjects || (currentCompany?.plan === 'TRIAL' ? 2 : currentCompany?.plan === 'STARTER' ? 10 : currentCompany?.plan === 'PROFESSIONAL' ? 50 : currentCompany?.plan === 'ADVANCED' ? 200 : 1000);
+
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 select-none shadow-xs">
       {/* Brand Header */}
@@ -94,7 +97,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <h1 className="text-sm font-bold tracking-tight text-slate-900 flex items-center gap-1.5">
             LV ESTIMATOR
             <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-semibold">
-              PRO
+              {currentCompany?.plan || 'PRO'}
             </span>
           </h1>
           <p className="text-[11px] text-slate-500 font-mono">Switchgear Estimation ERP</p>
@@ -155,18 +158,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           </button>
 
-          <button
-            onClick={() => onSelectView('client_approvals')}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded text-left font-medium transition-colors mt-0.5 ${getNavClass('client_approvals')}`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Building2 className="w-4 h-4 text-emerald-600" />
-              <span>Client Companies & Approvals</span>
-            </div>
-            <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
-              Clients
-            </span>
-          </button>
+          {isPlatformAdmin && (
+            <button
+              onClick={() => onSelectView('client_approvals')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded text-left font-medium transition-colors mt-0.5 ${getNavClass('client_approvals')}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Building2 className="w-4 h-4 text-emerald-600" />
+                <span>Client Companies & Approvals</span>
+              </div>
+              <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                Admin
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Engineering & SLD Studio */}
@@ -191,8 +196,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Estimation & Sizing Engine */}
         <div>
-          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
-            Estimation Engine
+          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono flex items-center justify-between">
+            <span>Estimation Engine</span>
+            <span className="text-[9px] font-mono text-cyan-700 font-bold">Quota: {projectCount}/{maxProjects}</span>
           </div>
           <div className="space-y-0.5">
             <button
@@ -203,8 +209,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <FolderGit2 className="w-4 h-4 text-cyan-600" />
                 <span>Projects & RFQs</span>
               </div>
-              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                {projectCount}
+              <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded border font-bold ${
+                projectCount >= maxProjects
+                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  : 'bg-slate-100 text-slate-700 border-slate-200'
+              }`}>
+                {projectCount} / {maxProjects}
               </span>
             </button>
 

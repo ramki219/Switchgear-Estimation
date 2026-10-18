@@ -22,6 +22,7 @@ interface QuotationsViewProps {
   onBackToEstimation: () => void;
   onSaveQuotation: (quoteData: any) => void;
   onOpenDossier?: (project: Project) => void;
+  onRequireUpgrade?: () => void;
 }
 
 export const QuotationsView: React.FC<QuotationsViewProps> = ({
@@ -32,6 +33,7 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
   onBackToEstimation,
   onSaveQuotation,
   onOpenDossier,
+  onRequireUpgrade,
 }) => {
   const [quotationNumber, setQuotationNumber] = useState('');
   const [revisionNumber, setRevisionNumber] = useState('R0');
@@ -117,6 +119,10 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
   };
 
   const handleExportCSV = () => {
+    if (company?.plan === 'TRIAL') {
+      if (onRequireUpgrade) onRequireUpgrade();
+      return;
+    }
     const currentQuoteObj: Quotation = {
       quotationID: quotation?.quotationID || 0,
       projectID: project.projectID,
@@ -163,6 +169,10 @@ export const QuotationsView: React.FC<QuotationsViewProps> = ({
   const [pdfSuccess, setPdfSuccess] = useState(false);
 
   const handleDownloadPDF = () => {
+    if (company?.plan === 'TRIAL') {
+      if (onRequireUpgrade) onRequireUpgrade();
+      return;
+    }
     setIsGeneratingPdf(true);
     try {
       const currentQuoteObj: Quotation = {
