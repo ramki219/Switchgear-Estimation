@@ -15,6 +15,7 @@ interface HeaderProps {
   onExportCSV: () => void;
   onOpenArchitecture: () => void;
   onOpenDocumentation?: () => void;
+  onNavigateToClientApprovals?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,11 +30,20 @@ export const Header: React.FC<HeaderProps> = ({
   onExportCSV,
   onOpenArchitecture,
   onOpenDocumentation,
+  onNavigateToClientApprovals,
 }) => {
   const titles: Record<NavView, { title: string; subtitle: string }> = {
     dashboard: {
-      title: 'Estimation Operations Dashboard',
-      subtitle: 'Overview of switchgear component catalog, active price records, tenders & panel estimations',
+      title: 'Sales & Estimation Intelligence Dashboard',
+      subtitle: 'Complete commercial workflow: RFQ received → Costing → Quotation submitted → Follow-up → PO booked → Handover & Profitability',
+    },
+    po_register: {
+      title: 'Purchase Order Booking & Verification Register',
+      subtitle: 'Customer PO registration, verified value entry ex-VAT, 5% VAT, variance vs quoted price & immutable audit history',
+    },
+    follow_ups: {
+      title: 'Commercial Follow-Up & Client Action Center',
+      subtitle: 'Track interactions, consultant review approvals, overdue tender follow-ups, and scheduled reminders',
     },
     sld_studio: {
       title: 'LV Switchgear Engineering & SLD Design Studio',
@@ -91,9 +101,17 @@ export const Header: React.FC<HeaderProps> = ({
       title: 'Panel Types & Standard Assemblies',
       subtitle: 'MDB, SMDB, DB, MCC, APFC & ATS panel configurations per IEC 61439',
     },
+    predefined_assemblies: {
+      title: 'Predefined Assemblies & Ready Final Prices',
+      subtitle: 'Fixed design ATS, Capacitor Banks (APFC), Motor Starter panels & SMDBs with ready final prices and 1-click project picking',
+    },
     labour_rates: {
       title: 'Labour & Fabrication Rates',
       subtitle: 'Activity-based hourly costing for copper busbar fabrication, wiring, assembly & testing',
+    },
+    client_approvals: {
+      title: 'Client Companies & User Login Approvals',
+      subtitle: 'Verified client directory, trade licenses, approval workflows, and Firebase user access management',
     },
     architecture: {
       title: 'SQL Server & Backend Architecture',
@@ -117,6 +135,27 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2.5">
+        {/* Quick Client & Approval Counter Pill */}
+        {onNavigateToClientApprovals && (
+          <button
+            onClick={onNavigateToClientApprovals}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer border ${
+              currentView === 'client_approvals'
+                ? 'bg-cyan-700 text-white border-cyan-800'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+            }`}
+            title="Check how many clients are registered and manage login approvals"
+          >
+            <Building2 className={`w-3.5 h-3.5 ${currentView === 'client_approvals' ? 'text-white' : 'text-emerald-700'}`} />
+            <span className="hidden sm:inline">Clients &amp; Approvals</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+              currentView === 'client_approvals' ? 'bg-cyan-900 text-white' : 'bg-emerald-200 text-emerald-900'
+            }`}>
+              5 Registered
+            </span>
+          </button>
+        )}
+
         {/* User Authentication & Tenant Isolation Badge */}
         {onOpenAuthModal && (
           <div className="flex items-center gap-1.5">

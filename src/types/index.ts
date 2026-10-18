@@ -172,6 +172,10 @@ export interface Project {
   dueDate: string;
   currency: string;
   assignedEstimator: string;
+  salesperson?: string; // Opportunity sales lead
+  rfqReference?: string;
+  rfqReceivedDate?: string;
+  projectCategory?: string; // Commercial, Residential, Industrial, Infrastructure, Healthcare
   notes?: string;
   panelsCount?: number;
   totalCost?: number;
@@ -273,6 +277,64 @@ export interface EstimatePanel {
   labourHoursDetail?: PanelLabourHour[];
 }
 
+export type AssemblyCategory = 'ATS' | 'CAPACITOR_BANK' | 'MOTOR_STARTER' | 'SMDB' | 'DB' | 'METER_CABINET';
+
+export interface PredefinedAssemblyItem {
+  circuitTag: string;
+  description: string;
+  categoryCode?: string;
+  manufacturerCode?: string;
+  partNumber: string;
+  rating?: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  totalCost: number;
+  componentID?: number;
+}
+
+export interface PredefinedAssembly {
+  id: string; // e.g. "STD-ATS-400A", "STD-MC-CT-400"
+  code: string;
+  name: string;
+  category: AssemblyCategory;
+  rating: string; // e.g. "400A 4P", "150 kvar", "45 kW Star-Delta", "400A CT Metering"
+  description: string;
+  incomerRating: number;
+  panelTypeCode: string; // ATS, APFC, MCC, SMDB, DB, METER_CABINET
+  ratedVoltage: number; // 415V
+  shortCircuitRating: number; // kA: 35, 50, 65
+  formOfSeparation: string; // "Form 2b", "Form 3b", "Form 4b Type 6"
+  ipRating: string; // "IP42", "IP54", "IP55", "IP65"
+  enclosureDimensions: string; // e.g. "2000 x 800 x 600 mm"
+  enclosureBrand: string;
+  primaryOEM: string; // "ABB", "SCHNEIDER", "SIEMENS"
+  authorityCompliance: string[]; // ["DEWA", "ADDC", "SEWA"]
+  
+  // Costing & Ready Final Prices in AED
+  equipmentCost: number;
+  copperCost: number;
+  enclosureCost: number;
+  labourCost: number;
+  labourHours: number;
+  totalDirectCost: number;
+  overheadPercent: number; // e.g. 8%
+  profitMarginPercent: number; // e.g. 15%
+  readyFinalPrice: number; // Final Selling Price in AED
+  
+  // Physical parameters
+  copperWeightKg: number;
+  enclosureHeight: number;
+  enclosureWidth: number;
+  enclosureDepth: number;
+  numberOfColumns: number;
+  cableEntry: CableEntryType;
+  leadTimeWeeks: number;
+
+  // Included items in this standard fixed design
+  items: PredefinedAssemblyItem[];
+}
+
 export interface Quotation {
   quotationID: number;
   quotationNumber: string; // e.g. "QT-2026-084-R0"
@@ -309,6 +371,147 @@ export interface Quotation {
   inclusions: string[];
   exclusions: string[];
   status: 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'REVISED';
+
+  // Commercial Intelligence & Workflow Linkage
+  salesperson?: string; // Responsible sales owner
+  estimator?: string; // Responsible estimation engineer
+  rfqReference?: string;
+  rfqReceivedDate?: string;
+  estimationAssignedDate?: string;
+  quotationPreparedDate?: string;
+  quotationSubmittedDate?: string;
+  expectedPoDate?: string;
+  lastFollowUpDate?: string;
+  nextFollowUpDate?: string;
+  winProbabilityPercent?: number; // 0 to 100
+  lostReason?: string;
+  linkedPoId?: number;
+  linkedPoStatus?: PurchaseOrderStatus;
+  linkedPoNumber?: string;
+  verifiedPoValue?: number;
+}
+
+// ==========================================
+// COMMERCIAL ORDER BOOKING & PO TYPES
+// ==========================================
+
+export type PurchaseOrderStatus = 'DRAFT' | 'SUBMITTED' | 'VERIFIED' | 'REJECTED' | 'CANCELLED';
+
+export interface POAuditEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  user: string;
+  oldValue?: string;
+  newValue?: string;
+  details?: string;
+}
+
+export interface PurchaseOrder {
+  poID: number;
+  poNumber: string; // Customer PO Reference
+  quotationID: number;
+  quotationNumber: string;
+  revisionNumber: string; // Linked revision (e.g. "R0", "R1")
+  projectID: number;
+  projectCode: string;
+  projectName: string;
+  clientName: string;
+  salesperson: string; // Sales owner who closed the order
+  estimator?: string; // Estimator who configured the technical quote
+  poReceivedDate: string; // ISO date YYYY-MM-DD
+  poValueExVat: number; // Manually entered verified PO value (AED, ex VAT)
+  vatPercent: number; // 5% UAE VAT
+  vatAmount: number;
+  poValueIncVat: number; // PO Value including VAT
+  currency: string; // 'AED' default
+  status: PurchaseOrderStatus;
+  isPartialPO?: boolean;
+  partialPONote?: string;
+  poDocumentRef?: string; // Attached PO file reference
+  remarks?: string;
+  enteredBy: string;
+  verifiedBy?: string;
+  verificationDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  auditHistory?: POAuditEntry[];
+}
+
+export type FollowUpCategory = 
+  | 'DUE_TODAY' 
+  | 'OVERDUE' 
+  | 'DUE_SOON' 
+  | 'AWAITING_CUSTOMER' 
+  | 'EXPECTED_PO_OVERDUE' 
+  | 'NO_FOLLOWUP_SCHEDULED';
+
+export interface FollowUpActivity {
+  id: number;
+  quotationID: number;
+  quotationNumber: string;
+  projectID: number;
+  clientName: string;
+  projectName: string;
+  date: string;
+  salesperson: string;
+  contactPerson?: string;
+  channel: 'PHONE' | 'EMAIL' | 'MEETING' | 'SITE_VISIT' | 'WHATSAPP';
+  notes: string;
+  nextActionDate?: string;
+  nextActionNotes?: string;
+  statusUpdate?: string;
+  createdAt: string;
+}
+
+export interface CommercialFilters {
+  dateRange: 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM';
+  startDate?: string;
+  endDate?: string;
+  salesperson: string; // 'ALL' or specific name
+  estimator: string; // 'ALL' or specific name
+  customer: string; // 'ALL' or specific customer
+  quotationStatus: string; // 'ALL', 'DRAFT', 'SUBMITTED', 'ACCEPTED', 'REJECTED'
+  orderStatus: string; // 'ALL', 'VERIFIED', 'DRAFT', 'CANCELLED', 'NO_PO'
+  projectCategory: string; // 'ALL', 'DEWA', 'ADDC', 'SEWA', 'COMMERCIAL', 'RESIDENTIAL', 'INDUSTRIAL'
+  searchQuery: string;
+}
+
+export interface SalespersonPerformance {
+  name: string;
+  rfqCount: number;
+  quotationsSubmitted: number;
+  totalQuotedValue: number;
+  opportunitiesWon: number;
+  poCount: number;
+  totalVerifiedPoValue: number;
+  openPipelineValue: number;
+  lostOpportunityValue: number;
+  conversionRatePercent: number;
+  averageOrderValue: number;
+  followUpsPending: number;
+  overdueFollowUps: number;
+  salesTargetAed: number;
+  targetProgressPercent: number;
+  monthlyWonValue: { month: string; amount: number }[];
+}
+
+export interface EstimatorPerformance {
+  name: string;
+  rfqsAssigned: number;
+  quotationsPrepared: number;
+  quotationsSubmitted: number;
+  totalQuotedValuePrepared: number;
+  totalQuotedValueSubmitted: number;
+  avgPreparationTimeDays: number;
+  pendingEstimation: number;
+  pendingInternalApproval: number;
+  awaitingSubmission: number;
+  revisionCount: number;
+  wonQuotationCount: number;
+  associatedPoValue: number;
+  winRatePercent: number;
+  monthlyProductivity: { month: string; count: number; value: number }[];
 }
 
 export interface ConsolidatedBOMItem {

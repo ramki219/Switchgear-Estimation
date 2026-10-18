@@ -22,7 +22,9 @@ import {
   boms, 
   productionJobs, 
   purchaseRequisitions, 
-  auditLogs 
+  auditLogs,
+  purchaseOrders,
+  followUpActivities
 } from './src/db/schema.ts';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { requireAuth } from './src/middleware/auth.ts';
@@ -778,6 +780,129 @@ app.get('/api/audit-logs', requireAuth, async (req: AuthRequest, res: Response) 
       .orderBy(desc(auditLogs.timestamp))
       .limit(50);
     res.json(logs);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// API: COMMERCIAL INTELLIGENCE & PURCHASE ORDER BOOKING
+// ----------------------------------------------------------------------------
+app.get('/api/commercial/purchase-orders', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orders = await db.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.companyId, req.companyId!))
+      .orderBy(desc(purchaseOrders.createdAt));
+    res.json(orders);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/commercial/purchase-orders', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.companyId!;
+    const data = req.body;
+    const vatPercent = data.vatPercent ?? 5.0;
+    const poValEx = parseFloat(data.poValueExVat || '0');
+    const vatAmt = parseFloat((poValEx * (vatPercent / 100)).toFixed(2));
+    const poValInc = parseFloat((poValEx + vatAmt).toFixed(2));
+
+    const newPo = await db.insert(purchaseOrders).values({
+      companyId,
+      poNumber: data.poNumber,
+      quotationId: data.quotationId ? parseInt(data.quotationId, 10) : null,
+      projectId: parseInt(data.projectId, 10),
+      clientName: data.clientName,
+      salesperson: data.salesperson,
+      estimator: data.estimator || null,
+      poReceivedDate: data.poReceivedDate || null,
+      poValueExVat: String(poValEx),
+      vatPercent: String(vatPercent),
+      vatAmount: String(vatAmt),
+      poValueIncVat: String(poValInc),
+      currency: data.currency || 'AED',
+      status: data.status || 'DRAFT',
+      isPartialPo: Boolean(data.isPartialPo),
+      partialPoNote: data.partialPoNote || null,
+      poDocumentRef: data.poDocumentRef || null,
+      remarks: data.remarks || null,
+      enteredBy: req.user?.email || 'Commercial User',
+      verifiedBy: data.status === 'VERIFIED' ? (req.user?.email || 'Verifier') : null,
+      verificationDate: data.status === 'VERIFIED' ? new Date().toISOString().split('T')[0] : null,
+    }).returning();
+
+    logAudit(companyId, req.user?.email || 'user', 'BOOK_PURCHASE_ORDER', 'purchase_orders', newPo[0].id, `PO: ${data.poNumber} (${poValEx} AED)`);
+
+    // If verified, update project status to WON
+    if (data.status === 'VERIFIED') {
+      await db.update(projects).set({ status: 'WON' }).where(eq(projects.id, parseInt(data.projectId, 10)));
+    }
+
+    res.json(newPo[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/commercial/purchase-orders/:id/verify', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.companyId!;
+    const id = parseInt(req.params.id, 10);
+    const verifier = req.user?.email || 'Commercial Manager';
+    const today = new Date().toISOString().split('T')[0];
+
+    const updated = await db.update(purchaseOrders).set({
+      status: 'VERIFIED',
+      verifiedBy: verifier,
+      verificationDate: today,
+      updatedAt: new Date(),
+    }).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.companyId, companyId))).returning();
+
+    if (updated.length > 0) {
+      logAudit(companyId, verifier, 'VERIFY_PURCHASE_ORDER', 'purchase_orders', id, `Verified PO ${updated[0].poNumber}`);
+      await db.update(projects).set({ status: 'WON' }).where(eq(projects.id, updated[0].projectId));
+    }
+
+    res.json(updated[0]);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/commercial/follow-ups', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const list = await db.select().from(followUpActivities)
+      .where(eq(followUpActivities.companyId, req.companyId!))
+      .orderBy(desc(followUpActivities.activityDate));
+    res.json(list);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/commercial/follow-ups', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.companyId!;
+    const data = req.body;
+
+    const newActivity = await db.insert(followUpActivities).values({
+      companyId,
+      quotationId: data.quotationId ? parseInt(data.quotationId, 10) : null,
+      projectId: parseInt(data.projectId, 10),
+      clientName: data.clientName,
+      salesperson: data.salesperson,
+      contactPerson: data.contactPerson || null,
+      channel: data.channel || 'PHONE',
+      notes: data.notes,
+      nextActionDate: data.nextActionDate || null,
+      nextActionNotes: data.nextActionNotes || null,
+      statusUpdate: data.statusUpdate || null,
+    }).returning();
+
+    logAudit(companyId, req.user?.email || 'user', 'ADD_FOLLOW_UP', 'follow_up_activities', newActivity[0].id);
+
+    res.json(newActivity[0]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

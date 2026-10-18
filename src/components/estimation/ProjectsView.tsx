@@ -16,8 +16,10 @@ import {
   Layers, 
   MapPin,
   Zap,
-  Award 
+  Award,
+  Boxes
 } from 'lucide-react';
+import { PickAssemblyModal } from './PickAssemblyModal';
 
 interface ProjectsViewProps {
   projects: Project[];
@@ -44,6 +46,8 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [isPickModalOpen, setIsPickModalOpen] = useState(false);
+  const [projectForPick, setProjectForPick] = useState<Project | null>(null);
 
   // Filter projects
   const filteredProjects = useMemo(() => {
@@ -169,13 +173,27 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           </select>
         </div>
 
-        <button
-          onClick={onOpenNewProject}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition shadow-2xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Project / Tender</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setProjectForPick(projects[0] || null);
+              setIsPickModalOpen(true);
+            }}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition shadow-2xs"
+            title="Pick fixed design panel (ATS, Capacitor Bank, Motor Starter) directly into any project"
+          >
+            <Boxes className="w-4 h-4 text-emerald-700" />
+            <span>Pick Predefined Assembly</span>
+          </button>
+
+          <button
+            onClick={onOpenNewProject}
+            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2 transition shadow-2xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Project / Tender</span>
+          </button>
+        </div>
       </div>
 
       {/* Projects List Grid */}
@@ -278,6 +296,18 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                 </button>
 
                 <button
+                  onClick={() => {
+                    setProjectForPick(p);
+                    setIsPickModalOpen(true);
+                  }}
+                  className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-2xs"
+                  title="Pick ATS, Capacitor Bank (APFC), or Starter panel into this project"
+                >
+                  <Boxes className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>+ Predefined Panel</span>
+                </button>
+
+                <button
                   onClick={() => onSelectProjectForQuotation(p)}
                   className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 px-3 py-1.5 rounded-lg font-medium text-xs flex items-center justify-center gap-1.5 transition shadow-2xs"
                 >
@@ -325,6 +355,17 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
           ))
         )}
       </div>
+
+      {/* Pick Predefined Assembly Modal */}
+      <PickAssemblyModal
+        isOpen={isPickModalOpen}
+        onClose={() => setIsPickModalOpen(false)}
+        projects={projects}
+        activeProject={projectForPick}
+        onAssemblyPicked={(panels, prj) => {
+          onSelectProjectForEstimation(prj);
+        }}
+      />
     </div>
   );
 };

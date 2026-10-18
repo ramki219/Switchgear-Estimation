@@ -19,11 +19,17 @@ import {
   CreditCard,
   Building2,
   LogOut,
-  FileText
+  FileText,
+  FileCheck,
+  PhoneCall,
+  TrendingUp,
+  Boxes
 } from 'lucide-react';
 
 export type NavView = 
   | 'dashboard' 
+  | 'po_register'
+  | 'follow_ups'
   | 'sld_studio'
   | 'bureau'
   | 'projects'
@@ -31,12 +37,14 @@ export type NavView =
   | 'bom'
   | 'quotations'
   | 'production'
+  | 'predefined_assemblies'
   | 'components' 
   | 'manufacturers' 
   | 'suppliers' 
   | 'prices' 
   | 'panel_types' 
   | 'labour_rates' 
+  | 'client_approvals'
   | 'saas_billing'
   | 'company_settings'
   | 'architecture' 
@@ -95,15 +103,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Sections */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5 text-xs">
-        {/* Core */}
+        {/* Commercial Sales & Estimation Intelligence */}
         <div>
-          <button
-            onClick={() => onSelectView('dashboard')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left font-medium transition-colors ${getNavClass('dashboard')}`}
-          >
-            <LayoutDashboard className="w-4 h-4 text-cyan-600" />
-            <span>Dashboard</span>
-          </button>
+          <div className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider font-mono flex items-center justify-between">
+            <span>Sales & Commercial</span>
+            <span className="text-[9px] px-1.5 py-0.2 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold">AED</span>
+          </div>
+          <div className="space-y-0.5">
+            <button
+              onClick={() => onSelectView('dashboard')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left font-medium transition-colors ${getNavClass('dashboard')}`}
+            >
+              <LayoutDashboard className="w-4 h-4 text-cyan-600" />
+              <span>Sales Intelligence</span>
+            </button>
+
+            <button
+              onClick={() => onSelectView('po_register')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left font-medium transition-colors ${getNavClass('po_register')}`}
+            >
+              <FileCheck className="w-4 h-4 text-emerald-600" />
+              <span>PO Booking Register</span>
+            </button>
+
+            <button
+              onClick={() => onSelectView('follow_ups')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded text-left font-medium transition-colors ${getNavClass('follow_ups')}`}
+            >
+              <PhoneCall className="w-4 h-4 text-amber-600" />
+              <span>Follow-Up Center</span>
+            </button>
+          </div>
         </div>
 
         {/* Model A: Outsourced Bidding Bureau Hub */}
@@ -122,6 +152,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200 font-semibold">
               Live
+            </span>
+          </button>
+
+          <button
+            onClick={() => onSelectView('client_approvals')}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded text-left font-medium transition-colors mt-0.5 ${getNavClass('client_approvals')}`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Building2 className="w-4 h-4 text-emerald-600" />
+              <span>Client Companies & Approvals</span>
+            </div>
+            <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+              Clients
             </span>
           </button>
         </div>
@@ -258,6 +301,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <Layers className="w-4 h-4 text-indigo-600" />
               <span>Panel Types</span>
+            </button>
+
+            <button
+              onClick={() => onSelectView('predefined_assemblies')}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded text-left font-medium transition-colors ${getNavClass('predefined_assemblies')}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Boxes className="w-4 h-4 text-emerald-600" />
+                <span className="font-semibold text-slate-800">Predefined Assemblies</span>
+              </div>
+              <span className="font-mono text-[9px] px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                24 Ready
+              </span>
             </button>
           </div>
         </div>

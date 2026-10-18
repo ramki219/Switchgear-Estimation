@@ -25,7 +25,11 @@ import {
 import {
   INITIAL_PROJECTS,
   INITIAL_PANELS,
-  INITIAL_QUOTATIONS
+  INITIAL_QUOTATIONS,
+  INITIAL_PURCHASE_ORDERS,
+  INITIAL_FOLLOW_UPS,
+  DEMO_PURCHASE_ORDERS,
+  DEMO_FOLLOW_UPS
 } from '../data/phase2SeedData';
 import { INITIAL_BUREAU_CLIENTS } from '../data/bureauSeedData';
 import {
@@ -40,8 +44,15 @@ import {
   Quotation,
   ConsolidatedBOMItem,
   BureauClient,
-  ValueEngineeringOption
+  ValueEngineeringOption,
+  PurchaseOrder,
+  FollowUpActivity,
+  CommercialFilters,
+  SalespersonPerformance,
+  EstimatorPerformance,
+  PredefinedAssembly
 } from '../types/index';
+import { PREDEFINED_ASSEMBLIES } from '../data/predefinedAssembliesData';
 
 const STORAGE_KEYS = {
   MANUFACTURERS: 'lv_estimator_manufacturers_v1',
@@ -52,10 +63,13 @@ const STORAGE_KEYS = {
   PANEL_TYPES: 'lv_estimator_panel_types_v1',
   LABOUR_RATES: 'lv_estimator_labour_rates_v1',
   AUDIT_LOGS: 'lv_estimator_audit_logs_v1',
-  PROJECTS: 'lv_estimator_projects_v2',
+  PROJECTS: 'lv_estimator_projects_v3',
   PANELS: 'lv_estimator_panels_v2',
-  QUOTATIONS: 'lv_estimator_quotations_v2',
+  QUOTATIONS: 'lv_estimator_quotations_v3',
   BUREAU_CLIENTS: 'lv_estimator_bureau_clients_v2',
+  PURCHASE_ORDERS: 'lv_estimator_purchase_orders_v3',
+  FOLLOW_UPS: 'lv_estimator_follow_ups_v3',
+  PREDEFINED_ASSEMBLIES: 'lv_estimator_predefined_assemblies_v1',
 };
 
 class StorageService {
@@ -624,7 +638,23 @@ class StorageService {
       this.savePanelTypes(INITIAL_PANEL_TYPES);
       return INITIAL_PANEL_TYPES;
     }
-    return JSON.parse(raw);
+    try {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) {
+        if (!list.some((p: PanelType) => p.panelTypeCode === 'METER_CABINET')) {
+          const meterCabinet = INITIAL_PANEL_TYPES.find(p => p.panelTypeCode === 'METER_CABINET');
+          if (meterCabinet) {
+            list.push(meterCabinet);
+            this.savePanelTypes(list);
+          }
+        }
+        return list;
+      }
+    } catch (e) {
+      console.error('Error parsing panel types from storage', e);
+    }
+    this.savePanelTypes(INITIAL_PANEL_TYPES);
+    return INITIAL_PANEL_TYPES;
   }
 
   savePanelTypes(data: PanelType[]): void {
@@ -1298,6 +1328,679 @@ class StorageService {
     ];
   }
 
+  // ==========================================
+  // COMMERCIAL INTELLIGENCE: PURCHASE ORDERS & BOOKING
+  // ==========================================
+  getPurchaseOrders(): PurchaseOrder[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.PURCHASE_ORDERS);
+    let orders: PurchaseOrder[] = [];
+    if (!raw) {
+      orders = INITIAL_PURCHASE_ORDERS;
+      this.savePurchaseOrders(orders);
+    } else {
+      try {
+        orders = JSON.parse(raw);
+      } catch {
+        orders = [];
+      }
+    }
+
+    // Commercial ERP Governance Rule:
+    // A Purchase Order can ONLY exist if there is a corresponding quotation that has
+    // actually been generated and quoted (status is SUBMITTED, ACCEPTED, or REVISED).
+    // An unquoted project or draft estimation CANNOT have a Purchase Order.
+    const quotations = this.getQuotations();
+    const quotedQuoteMap = new Map<number, Quotation>();
+    quotations.forEach(q => {
+      // Must not be draft; must be an active, submitted commercial offer
+      if (q.status === 'SUBMITTED' || q.status === 'ACCEPTED' || q.status === 'REVISED') {
+        quotedQuoteMap.set(q.quotationID, q);
+      }
+    });
+
+    // If no quotations have been quoted yet, there can be NO purchase orders!
+    if (quotedQuoteMap.size === 0) {
+      if (orders.length > 0) {
+        this.savePurchaseOrders([]);
+      }
+      return [];
+    }
+
+    const validOrders = orders.filter(po => {
+      // Remove any draft sample POs on unquoted projects
+      if (po.poNumber === 'PO-DRAFT-SAMPLE-01') return false;
+      // Must link to an actually quoted quotation
+      const linkedQuote = quotedQuoteMap.get(po.quotationID);
+      if (!linkedQuote) return false;
+      return true;
+    });
+
+    // Auto-prune localStorage if any invalid or unquoted PO was detected
+    if (validOrders.length !== orders.length) {
+      this.savePurchaseOrders(validOrders);
+    }
+
+    return validOrders;
+  }
+
+  savePurchaseOrders(data: PurchaseOrder[]): void {
+    localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify(data));
+  }
+
+  getPurchaseOrderById(poID: number): PurchaseOrder | undefined {
+    return this.getPurchaseOrders().find(p => p.poID === poID);
+  }
+
+  getPurchaseOrdersByQuotation(quotationID: number): PurchaseOrder[] {
+    return this.getPurchaseOrders().filter(p => p.quotationID === quotationID);
+  }
+
+  getPurchaseOrdersByProject(projectID: number): PurchaseOrder[] {
+    return this.getPurchaseOrders().filter(p => p.projectID === projectID);
+  }
+
+  addPurchaseOrder(input: Omit<PurchaseOrder, 'poID' | 'createdAt' | 'updatedAt' | 'auditHistory'> & { auditUser?: string }): PurchaseOrder {
+    const orders = this.getPurchaseOrders();
+    const newId = orders.length > 0 ? Math.max(...orders.map(o => o.poID)) + 1 : 1;
+    const now = new Date().toISOString();
+
+    const vatPercent = input.vatPercent ?? 5.0;
+    const vatAmount = Number((input.poValueExVat * (vatPercent / 100)).toFixed(2));
+    const poValueIncVat = Number((input.poValueExVat + vatAmount).toFixed(2));
+
+    const initialAudit: any[] = [
+      {
+        id: `aud-${Date.now()}-1`,
+        timestamp: now,
+        action: 'CREATE_PO',
+        user: input.auditUser || input.enteredBy,
+        newValue: `PO created with value ${input.poValueExVat.toLocaleString()} AED ex-VAT (${input.status})`,
+        details: input.remarks || 'Customer Purchase Order registered in commercial system',
+      }
+    ];
+
+    if (input.status === 'VERIFIED') {
+      initialAudit.push({
+        id: `aud-${Date.now()}-2`,
+        timestamp: now,
+        action: 'VERIFY_PO',
+        user: input.verifiedBy || input.auditUser || input.enteredBy,
+        newValue: 'Status: VERIFIED',
+        details: 'Verified upon entry',
+      });
+    }
+
+    const newPO: PurchaseOrder = {
+      poID: newId,
+      poNumber: input.poNumber,
+      quotationID: input.quotationID,
+      quotationNumber: input.quotationNumber,
+      revisionNumber: input.revisionNumber || 'R0',
+      projectID: input.projectID,
+      projectCode: input.projectCode,
+      projectName: input.projectName,
+      clientName: input.clientName,
+      salesperson: input.salesperson,
+      estimator: input.estimator,
+      poReceivedDate: input.poReceivedDate,
+      poValueExVat: Number(input.poValueExVat.toFixed(2)),
+      vatPercent,
+      vatAmount,
+      poValueIncVat,
+      currency: input.currency || 'AED',
+      status: input.status,
+      isPartialPO: input.isPartialPO,
+      partialPONote: input.partialPONote,
+      poDocumentRef: input.poDocumentRef,
+      remarks: input.remarks,
+      enteredBy: input.enteredBy,
+      verifiedBy: input.status === 'VERIFIED' ? (input.verifiedBy || input.enteredBy) : undefined,
+      verificationDate: input.status === 'VERIFIED' ? (input.verificationDate || input.poReceivedDate) : undefined,
+      createdAt: now,
+      updatedAt: now,
+      auditHistory: initialAudit,
+    };
+
+    orders.unshift(newPO);
+    this.savePurchaseOrders(orders);
+
+    // Synchronize Quotation and Project Status
+    const quotations = this.getQuotations();
+    const qIdx = quotations.findIndex(q => q.quotationID === input.quotationID);
+    if (qIdx !== -1) {
+      quotations[qIdx] = {
+        ...quotations[qIdx],
+        linkedPoId: newPO.poID,
+        linkedPoNumber: newPO.poNumber,
+        linkedPoStatus: newPO.status,
+        verifiedPoValue: newPO.status === 'VERIFIED' ? newPO.poValueExVat : quotations[qIdx].verifiedPoValue,
+        status: newPO.status === 'VERIFIED' ? 'ACCEPTED' : quotations[qIdx].status,
+      };
+      this.saveQuotations(quotations);
+    }
+
+    const projects = this.getProjects();
+    const pIdx = projects.findIndex(p => p.projectID === input.projectID);
+    if (pIdx !== -1 && newPO.status === 'VERIFIED') {
+      projects[pIdx] = {
+        ...projects[pIdx],
+        status: 'WON',
+      };
+      this.saveProjects(projects);
+    }
+
+    this.addAuditLog(input.enteredBy, 'commercial.PurchaseOrders', String(newId), 'INSERT_PRICE', undefined, `PO ${newPO.poNumber}: ${newPO.poValueExVat} AED (${newPO.status})`);
+
+    return newPO;
+  }
+
+  updatePurchaseOrder(po: PurchaseOrder, user: string = 'Authorized User'): void {
+    const orders = this.getPurchaseOrders();
+    const idx = orders.findIndex(o => o.poID === po.poID);
+    if (idx !== -1) {
+      const old = orders[idx];
+      const now = new Date().toISOString();
+      const vatPercent = po.vatPercent ?? 5.0;
+      const vatAmount = Number((po.poValueExVat * (vatPercent / 100)).toFixed(2));
+      const poValueIncVat = Number((po.poValueExVat + vatAmount).toFixed(2));
+
+      const history = old.auditHistory || [];
+      if (old.poValueExVat !== po.poValueExVat || old.status !== po.status) {
+        history.unshift({
+          id: `aud-${Date.now()}`,
+          timestamp: now,
+          action: 'UPDATE_PO_VALUE',
+          user,
+          oldValue: `Value: ${old.poValueExVat} AED | Status: ${old.status}`,
+          newValue: `Value: ${po.poValueExVat} AED | Status: ${po.status}`,
+          details: po.remarks || 'Updated purchase order details',
+        });
+      }
+
+      const updated: PurchaseOrder = {
+        ...po,
+        vatPercent,
+        vatAmount,
+        poValueIncVat,
+        updatedAt: now,
+        auditHistory: history,
+      };
+
+      orders[idx] = updated;
+      this.savePurchaseOrders(orders);
+
+      // Sync linked quotation & project
+      const quotations = this.getQuotations();
+      const qIdx = quotations.findIndex(q => q.quotationID === po.quotationID);
+      if (qIdx !== -1) {
+        quotations[qIdx] = {
+          ...quotations[qIdx],
+          linkedPoStatus: po.status,
+          verifiedPoValue: po.status === 'VERIFIED' ? po.poValueExVat : undefined,
+          status: po.status === 'VERIFIED' ? 'ACCEPTED' : quotations[qIdx].status,
+        };
+        this.saveQuotations(quotations);
+      }
+    }
+  }
+
+  verifyPurchaseOrder(poID: number, verifiedBy: string): boolean {
+    const orders = this.getPurchaseOrders();
+    const idx = orders.findIndex(o => o.poID === poID);
+    if (idx === -1) return false;
+
+    const old = orders[idx];
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+
+    const history = old.auditHistory || [];
+    history.unshift({
+      id: `aud-${Date.now()}`,
+      timestamp: now,
+      action: 'VERIFY_PO',
+      user: verifiedBy,
+      oldValue: `Status: ${old.status}`,
+      newValue: 'Status: VERIFIED',
+      details: `Commercial verification executed by ${verifiedBy} on ${today}`,
+    });
+
+    const updated: PurchaseOrder = {
+      ...old,
+      status: 'VERIFIED',
+      verifiedBy,
+      verificationDate: today,
+      updatedAt: now,
+      auditHistory: history,
+    };
+
+    orders[idx] = updated;
+    this.savePurchaseOrders(orders);
+
+    // Update Quotation to ACCEPTED and Project to WON
+    const quotations = this.getQuotations();
+    const qIdx = quotations.findIndex(q => q.quotationID === old.quotationID);
+    if (qIdx !== -1) {
+      quotations[qIdx] = {
+        ...quotations[qIdx],
+        linkedPoStatus: 'VERIFIED',
+        verifiedPoValue: old.poValueExVat,
+        status: 'ACCEPTED',
+      };
+      this.saveQuotations(quotations);
+    }
+
+    const projects = this.getProjects();
+    const pIdx = projects.findIndex(p => p.projectID === old.projectID);
+    if (pIdx !== -1) {
+      projects[pIdx] = {
+        ...projects[pIdx],
+        status: 'WON',
+      };
+      this.saveProjects(projects);
+    }
+
+    return true;
+  }
+
+  rejectPurchaseOrder(poID: number, user: string, reason: string): boolean {
+    const orders = this.getPurchaseOrders();
+    const idx = orders.findIndex(o => o.poID === poID);
+    if (idx === -1) return false;
+
+    const old = orders[idx];
+    const now = new Date().toISOString();
+    const history = old.auditHistory || [];
+    history.unshift({
+      id: `aud-${Date.now()}`,
+      timestamp: now,
+      action: 'REJECT_PO',
+      user,
+      oldValue: `Status: ${old.status}`,
+      newValue: 'Status: REJECTED',
+      details: reason,
+    });
+
+    orders[idx] = {
+      ...old,
+      status: 'REJECTED',
+      remarks: reason,
+      updatedAt: now,
+      auditHistory: history,
+    };
+    this.savePurchaseOrders(orders);
+    return true;
+  }
+
+  cancelPurchaseOrder(poID: number, user: string, reason: string): boolean {
+    const orders = this.getPurchaseOrders();
+    const idx = orders.findIndex(o => o.poID === poID);
+    if (idx === -1) return false;
+
+    const old = orders[idx];
+    const now = new Date().toISOString();
+    const history = old.auditHistory || [];
+    history.unshift({
+      id: `aud-${Date.now()}`,
+      timestamp: now,
+      action: 'CANCEL_PO',
+      user,
+      oldValue: `Status: ${old.status}`,
+      newValue: 'Status: CANCELLED',
+      details: reason,
+    });
+
+    orders[idx] = {
+      ...old,
+      status: 'CANCELLED',
+      remarks: reason,
+      updatedAt: now,
+      auditHistory: history,
+    };
+    this.savePurchaseOrders(orders);
+    return true;
+  }
+
+  deletePurchaseOrder(poID: number): boolean {
+    const orders = this.getPurchaseOrders();
+    const filtered = orders.filter(o => o.poID !== poID);
+    this.savePurchaseOrders(filtered);
+    return true;
+  }
+
+  clearAllPurchaseOrders(): void {
+    this.savePurchaseOrders([]);
+  }
+
+  // ==========================================
+  // COMMERCIAL INTELLIGENCE: FOLLOW-UP ACTIVITIES
+  // ==========================================
+  getFollowUps(): FollowUpActivity[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.FOLLOW_UPS);
+    if (!raw) {
+      this.saveFollowUps(INITIAL_FOLLOW_UPS);
+      return INITIAL_FOLLOW_UPS;
+    }
+    return JSON.parse(raw);
+  }
+
+  saveFollowUps(data: FollowUpActivity[]): void {
+    localStorage.setItem(STORAGE_KEYS.FOLLOW_UPS, JSON.stringify(data));
+  }
+
+  addFollowUp(activity: Omit<FollowUpActivity, 'id' | 'createdAt'>): FollowUpActivity {
+    const list = this.getFollowUps();
+    const newId = list.length > 0 ? Math.max(...list.map(f => f.id)) + 1 : 1;
+    const item: FollowUpActivity = {
+      ...activity,
+      id: newId,
+      createdAt: new Date().toISOString(),
+    };
+    list.unshift(item);
+    this.saveFollowUps(list);
+
+    // Update Quotation last & next follow-up date
+    const quotations = this.getQuotations();
+    const qIdx = quotations.findIndex(q => q.quotationID === activity.quotationID);
+    if (qIdx !== -1) {
+      quotations[qIdx] = {
+        ...quotations[qIdx],
+        lastFollowUpDate: activity.date,
+        nextFollowUpDate: activity.nextActionDate || quotations[qIdx].nextFollowUpDate,
+        status: (activity.statusUpdate as any) || quotations[qIdx].status,
+      };
+      this.saveQuotations(quotations);
+    }
+
+    return item;
+  }
+
+  deleteFollowUp(id: number): void {
+    const list = this.getFollowUps();
+    this.saveFollowUps(list.filter(f => f.id !== id));
+  }
+
+  // Reset commercial pipeline back to clean, unquoted real state
+  resetCommercialPipelineToClean(): void {
+    const quotes = this.getQuotations().map(q => ({
+      ...q,
+      status: 'DRAFT' as const,
+      quotationSubmittedDate: undefined,
+      linkedPoId: undefined,
+      linkedPoNumber: undefined,
+      linkedPoStatus: undefined,
+      verifiedPoValue: undefined,
+      lastFollowUpDate: undefined,
+      nextFollowUpDate: undefined,
+      winProbabilityPercent: 50,
+    }));
+    this.saveQuotations(quotes);
+
+    const projects = this.getProjects().map(p => ({
+      ...p,
+      status: (p.status === 'WON' || p.status === 'QUOTED') ? 'IN_ESTIMATION' : p.status,
+    }));
+    this.saveProjects(projects);
+
+    this.savePurchaseOrders([]);
+    this.saveFollowUps([]);
+  }
+
+  // Load demo showcase data for presenting dashboard charts and analytics
+  loadDemoShowcaseData(): void {
+    const quotes = this.getQuotations().map(q => {
+      if (q.quotationID === 3) {
+        return {
+          ...q,
+          status: 'ACCEPTED' as const,
+          quotationSubmittedDate: '2026-09-08',
+          linkedPoId: 1,
+          linkedPoStatus: 'VERIFIED' as const,
+          linkedPoNumber: 'PO-DAN-2026-904',
+          verifiedPoValue: 143500.0,
+          winProbabilityPercent: 100,
+        };
+      }
+      if (q.quotationID === 4) {
+        return {
+          ...q,
+          status: 'ACCEPTED' as const,
+          quotationSubmittedDate: '2026-08-25',
+          linkedPoId: 2,
+          linkedPoStatus: 'VERIFIED' as const,
+          linkedPoNumber: 'PO-BKG-EXP-4412',
+          verifiedPoValue: 320000.0,
+          winProbabilityPercent: 100,
+        };
+      }
+      if (q.quotationID === 8) {
+        return {
+          ...q,
+          status: 'ACCEPTED' as const,
+          quotationSubmittedDate: '2026-08-20',
+          linkedPoId: 3,
+          linkedPoStatus: 'VERIFIED' as const,
+          linkedPoNumber: 'PO-AFE-DSO-8821',
+          verifiedPoValue: 450000.0,
+          winProbabilityPercent: 100,
+        };
+      }
+      if (q.quotationID === 1 || q.quotationID === 2 || q.quotationID === 5) {
+        return {
+          ...q,
+          status: 'SUBMITTED' as const,
+          quotationSubmittedDate: '2026-09-20',
+          winProbabilityPercent: 70,
+        };
+      }
+      return q;
+    });
+    this.saveQuotations(quotes);
+
+    const projects = this.getProjects().map(p => {
+      if (p.projectID === 3 || p.projectID === 4 || p.projectID === 8) {
+        return { ...p, status: 'WON' as const };
+      }
+      if (p.projectID === 1 || p.projectID === 2 || p.projectID === 5) {
+        return { ...p, status: 'QUOTED' as const };
+      }
+      return p;
+    });
+    this.saveProjects(projects);
+
+    this.savePurchaseOrders(DEMO_PURCHASE_ORDERS);
+    this.saveFollowUps(DEMO_FOLLOW_UPS);
+  }
+
+  // --- Predefined Fixed-Design Assemblies & Ready Final Prices ---
+  getPredefinedAssemblies(): PredefinedAssembly[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES);
+    if (!raw) {
+      this.savePredefinedAssemblies(PREDEFINED_ASSEMBLIES);
+      return PREDEFINED_ASSEMBLIES;
+    }
+    try {
+      const stored = JSON.parse(raw);
+      if (Array.isArray(stored) && stored.length > 0) {
+        // Auto-merge any missing standard assemblies (e.g. newly introduced METER_CABINET)
+        const storedIds = new Set(stored.map((a: PredefinedAssembly) => a.id));
+        const missing = PREDEFINED_ASSEMBLIES.filter(a => !storedIds.has(a.id));
+        if (missing.length > 0) {
+          const merged = [...stored, ...missing];
+          this.savePredefinedAssemblies(merged);
+          return merged;
+        }
+        return stored;
+      }
+    } catch (e) {
+      console.error('Error parsing predefined assemblies from storage', e);
+    }
+    this.savePredefinedAssemblies(PREDEFINED_ASSEMBLIES);
+    return PREDEFINED_ASSEMBLIES;
+  }
+
+  savePredefinedAssemblies(assemblies: PredefinedAssembly[]): void {
+    localStorage.setItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES, JSON.stringify(assemblies));
+  }
+
+  recalculatePredefinedAssembly(assembly: PredefinedAssembly): PredefinedAssembly {
+    // Recalculate equipment cost from all items
+    const equipmentCost = (assembly.items || []).reduce((sum, item) => {
+      const itemTotal = Number(item.totalCost) !== undefined && !isNaN(Number(item.totalCost))
+        ? Number(item.totalCost) 
+        : (Number(item.quantity) * Number(item.unitCost));
+      return sum + itemTotal;
+    }, 0);
+
+    const copperCost = Number(assembly.copperCost) || 0;
+    const enclosureCost = Number(assembly.enclosureCost) || 0;
+    const labourCost = Number(assembly.labourCost) || 0;
+
+    const totalDirectCost = equipmentCost + copperCost + enclosureCost + labourCost;
+    const overheadPct = Number(assembly.overheadPercent) || 0;
+    const marginPct = Number(assembly.profitMarginPercent) || 0;
+
+    const subtotalWithOverhead = totalDirectCost * (1 + overheadPct / 100);
+    const readyFinalPrice = Math.round(subtotalWithOverhead * (1 + marginPct / 100));
+
+    return {
+      ...assembly,
+      equipmentCost: Math.round(equipmentCost * 100) / 100,
+      totalDirectCost: Math.round(totalDirectCost * 100) / 100,
+      readyFinalPrice,
+    };
+  }
+
+  updatePredefinedAssembly(assembly: PredefinedAssembly): PredefinedAssembly {
+    const list = this.getPredefinedAssemblies();
+    const recalculated = this.recalculatePredefinedAssembly(assembly);
+    const index = list.findIndex(a => a.id === assembly.id);
+    if (index !== -1) {
+      list[index] = recalculated;
+    } else {
+      list.push(recalculated);
+    }
+    this.savePredefinedAssemblies(list);
+    return recalculated;
+  }
+
+  addPredefinedAssembly(assembly: Omit<PredefinedAssembly, 'id'> & { id?: string }): PredefinedAssembly {
+    const list = this.getPredefinedAssemblies();
+    const newId = assembly.id || `CUSTOM-${assembly.panelTypeCode}-${Date.now()}`;
+    const newAssembly: PredefinedAssembly = {
+      ...assembly,
+      id: newId,
+    };
+    const recalculated = this.recalculatePredefinedAssembly(newAssembly);
+    list.unshift(recalculated);
+    this.savePredefinedAssemblies(list);
+    return recalculated;
+  }
+
+  deletePredefinedAssembly(id: string): void {
+    const list = this.getPredefinedAssemblies().filter(a => a.id !== id);
+    this.savePredefinedAssemblies(list);
+  }
+
+  resetPredefinedAssemblies(): PredefinedAssembly[] {
+    this.savePredefinedAssemblies(PREDEFINED_ASSEMBLIES);
+    return PREDEFINED_ASSEMBLIES;
+  }
+
+  pickAssemblyIntoProject(
+    assembly: PredefinedAssembly,
+    projectID: number,
+    customPanelTag?: string,
+    quantity: number = 1
+  ): EstimatePanel[] {
+    const existingPanels = this.getPanels();
+    const panelTypes = this.getPanelTypes();
+    const matchingPanelType = panelTypes.find(
+      pt => pt.panelTypeCode.toUpperCase() === assembly.panelTypeCode.toUpperCase()
+    ) || panelTypes[0];
+
+    const addedPanels: EstimatePanel[] = [];
+    const baseId = existingPanels.length > 0 ? Math.max(...existingPanels.map(p => p.panelID)) + 1 : 101;
+
+    for (let q = 0; q < quantity; q++) {
+      const panelId = baseId + q;
+      const tagSuffix = quantity > 1 ? `-${q + 1}` : '';
+      const tag = customPanelTag 
+        ? `${customPanelTag}${tagSuffix}` 
+        : `${assembly.panelTypeCode}-${panelId}`;
+
+      const newPanel: EstimatePanel = {
+        panelID: panelId,
+        projectID,
+        panelTag: tag,
+        panelName: assembly.name,
+        panelTypeID: matchingPanelType?.panelTypeID || 1,
+        panelTypeCode: assembly.panelTypeCode,
+        incomerRating: assembly.incomerRating,
+        ratedVoltage: assembly.ratedVoltage,
+        shortCircuitRating: assembly.shortCircuitRating,
+        formOfSeparation: assembly.formOfSeparation,
+        ipRating: assembly.ipRating,
+        cableEntry: assembly.cableEntry,
+
+        // Busbars
+        busbarCurrentDensity: 1.5,
+        busbarWidthMm: assembly.incomerRating >= 2500 ? 100 : assembly.incomerRating >= 1600 ? 80 : 50,
+        busbarThicknessMm: 10,
+        busbarRunsPerPhase: assembly.incomerRating >= 3200 ? 4 : assembly.incomerRating >= 2500 ? 3 : assembly.incomerRating >= 1250 ? 2 : 1,
+        busbarPhasesCount: 4,
+        busbarTotalLengthMeters: 4.5,
+        copperDensityKgDm3: 0.00896,
+        copperCrossSectionMm2: assembly.incomerRating >= 2500 ? 1000 : assembly.incomerRating >= 1600 ? 800 : 500,
+        copperWeightKg: assembly.copperWeightKg,
+        copperBaseRatePerKg: 42,
+        copperMaterialCost: assembly.copperCost * 0.75,
+        busbarLabourCost: assembly.copperCost * 0.15,
+        busbarHardwareCost: assembly.copperCost * 0.10,
+        copperCost: assembly.copperCost,
+
+        // Enclosure
+        enclosureHeight: assembly.enclosureHeight,
+        enclosureWidth: assembly.enclosureWidth,
+        enclosureDepth: assembly.enclosureDepth,
+        numberOfColumns: assembly.numberOfColumns,
+        sheetMetalThickness: 2.0,
+        enclosureCost: assembly.enclosureCost,
+        enclosureSource: 'CATALOGUE',
+        enclosureBrand: assembly.enclosureBrand,
+        catalogueEnclosurePrice: assembly.enclosureCost,
+
+        // Equipment & Labour
+        equipmentCost: assembly.equipmentCost,
+        labourHours: assembly.labourHours,
+        labourCost: assembly.labourCost,
+        totalPanelCost: assembly.totalDirectCost,
+
+        items: assembly.items.map((item, idx) => ({
+          itemID: (panelId * 100) + idx + 1,
+          panelID: panelId,
+          circuitTag: item.circuitTag,
+          description: item.description,
+          categoryCode: item.categoryCode,
+          manufacturerCode: item.manufacturerCode,
+          partNumber: item.partNumber,
+          rating: item.rating,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitCost: item.unitCost,
+          totalCost: item.totalCost,
+        })),
+      };
+
+      const recalculated = this.recalculatePanel(newPanel);
+      existingPanels.push(recalculated);
+      addedPanels.push(recalculated);
+    }
+
+    this.savePanels(existingPanels);
+    this.syncProjectTotals(projectID);
+    return addedPanels;
+  }
+
   // Reset to default seed data
   resetAllData(): void {
     localStorage.removeItem(STORAGE_KEYS.MANUFACTURERS);
@@ -1312,6 +2015,9 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.PANELS);
     localStorage.removeItem(STORAGE_KEYS.QUOTATIONS);
     localStorage.removeItem(STORAGE_KEYS.BUREAU_CLIENTS);
+    localStorage.removeItem(STORAGE_KEYS.PURCHASE_ORDERS);
+    localStorage.removeItem(STORAGE_KEYS.FOLLOW_UPS);
+    localStorage.removeItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES);
   }
 }
 

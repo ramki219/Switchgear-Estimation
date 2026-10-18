@@ -1,0 +1,40 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "Represents an application user with role and approval status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ADMIN", "CLIENT"] },
+        "approved": { "type": "boolean" },
+        "companyId": { "type": "string" }
+      },
+      "required": ["uid", "email", "role", "approved"]
+    },
+    "companyRegistration": {
+      "title": "Company Registration",
+      "description": "Represents a pending company registration request.",
+      "type": "object",
+      "properties": {
+        "registrationId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["registrationId", "companyName", "email", "status", "submittedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "user",
+      "description": "Stores user profiles."
+    },
+    "/companyRegistrations/{registrationId}": {
+      "schema": "companyRegistration",
+      "description": "Stores pending company registrations."
+    }
+  }
+}

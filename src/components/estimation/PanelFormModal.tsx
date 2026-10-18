@@ -227,6 +227,32 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
       if (defaultDB) {
         applyEnclosureFromCatalogue(defaultDB);
       }
+    } else if (typeCode === 'ATS') {
+      setPanelTag('ATS-01');
+      setPanelName('Automatic Transfer Switch Panel 400A 4P');
+      setIncomerRating(400);
+      setShortCircuitRating(36);
+      setFormOfSeparation('Form 3b');
+      setIpRating('IP54');
+      setEnclosureWidth(1000);
+      setEnclosureHeight(1800);
+      setEnclosureDepth(400);
+      setNumberOfColumns(1);
+    } else if (typeCode === 'METER_CABINET') {
+      setPanelTag('MTR-01');
+      setPanelName('DEWA / Authority Meter Cabinet (Direct / CT Metering)');
+      setIncomerRating(250);
+      setShortCircuitRating(36);
+      setFormOfSeparation('Form 2b');
+      setIpRating('IP54');
+      setBusbarWidthMm(50);
+      setBusbarThicknessMm(10);
+      setBusbarRunsPerPhase(1);
+      setBusbarTotalLengthMeters(3.5);
+      setEnclosureWidth(1000);
+      setEnclosureHeight(1600);
+      setEnclosureDepth(350);
+      setNumberOfColumns(1);
     }
   };
 
@@ -482,6 +508,7 @@ export const PanelFormModal: React.FC<PanelFormModalProps> = ({
             >
               <option value="MDB">MDB - Main Distribution Board</option>
               <option value="SMDB">SMDB - Sub-Main Distribution Board</option>
+              <option value="METER_CABINET">METER CABINET - Utility Metering Cabinet (DEWA / SEWA / ADDC)</option>
               <option value="APFC">APFC - Capacitor Bank (PF Correction)</option>
               <option value="MCC">MCC - Motor Control Center</option>
               <option value="ATS">ATS - Automatic Transfer Switch</option>

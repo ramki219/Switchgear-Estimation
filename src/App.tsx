@@ -19,6 +19,8 @@ import {
   Project,
   EstimatePanel,
   Quotation,
+  PurchaseOrder,
+  FollowUpActivity,
   ConsolidatedBOMItem,
   BulkImportResult,
   CompanyTenant,
@@ -58,11 +60,15 @@ import { ProjectFormModal } from './components/estimation/ProjectFormModal';
 import { BureauHubView } from './components/bureau/BureauHubView';
 import { SLDStudioView } from './components/engineering/SLDStudioView';
 
-// Commercial SaaS & Production Handover Views
+// Commercial SaaS, Sales Intelligence & Production Handover Views
+import { POBookingView } from './components/commercial/POBookingView';
+import { FollowUpCenterView } from './components/commercial/FollowUpCenterView';
+import { NewFollowUpModal } from './components/commercial/NewFollowUpModal';
 import { ProductionHandoverView } from './components/production/ProductionHandoverView';
 import { SaaSBillingView } from './components/saas/SaaSBillingView';
 import { CompanySettingsView } from './components/saas/CompanySettingsView';
 import { FacebookLoginScreen } from './components/auth/FacebookLoginScreen';
+import { PredefinedAssembliesView } from './components/assemblies/PredefinedAssembliesView';
 import { ProjectDocumentationModal } from './components/documentation/ProjectDocumentationModal';
 import { auth } from './lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -147,6 +153,11 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [allPanels, setAllPanels] = useState<EstimatePanel[]>([]);
   const [allQuotations, setAllQuotations] = useState<Quotation[]>([]);
+  const [allOrders, setAllOrders] = useState<PurchaseOrder[]>([]);
+  const [allFollowUps, setAllFollowUps] = useState<FollowUpActivity[]>([]);
+  const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
+  const [selectedQuoteForFollowUp, setSelectedQuoteForFollowUp] = useState<Quotation | null>(null);
+
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activePanels, setActivePanels] = useState<EstimatePanel[]>([]);
   const [activeQuotation, setActiveQuotation] = useState<Quotation | undefined>(undefined);
@@ -188,6 +199,8 @@ export default function App() {
     setProjects(loadedProjects);
     setAllPanels(storageService.getPanels());
     setAllQuotations(storageService.getQuotations());
+    setAllOrders(storageService.getPurchaseOrders());
+    setAllFollowUps(storageService.getFollowUps());
 
     // If there's an active project, refresh its panels & state
     setActiveProject(prev => {
@@ -348,6 +361,57 @@ export default function App() {
 
   const handleSaveQuotation = (quoteData: any) => {
     storageService.createOrUpdateQuotation(quoteData);
+    loadData();
+  };
+
+  // Commercial Intelligence Handlers: Purchase Orders & Follow-ups
+  const handleSavePO = (po: Omit<PurchaseOrder, 'poID' | 'createdAt' | 'updatedAt' | 'auditHistory'>) => {
+    storageService.addPurchaseOrder(po);
+    loadData();
+  };
+
+  const handleUpdatePO = (po: PurchaseOrder) => {
+    storageService.updatePurchaseOrder(po);
+    loadData();
+  };
+
+  const handleVerifyPO = (poID: number, verifiedBy: string) => {
+    storageService.verifyPurchaseOrder(poID, verifiedBy);
+    loadData();
+  };
+
+  const handleRejectPO = (poID: number, reason: string) => {
+    storageService.rejectPurchaseOrder(poID, currentUser?.fullName || 'Commercial Lead', reason);
+    loadData();
+  };
+
+  const handleCancelPO = (poID: number, reason: string) => {
+    storageService.cancelPurchaseOrder(poID, currentUser?.fullName || 'Commercial Lead', reason);
+    loadData();
+  };
+
+  const handleDeletePO = (poID: number) => {
+    storageService.deletePurchaseOrder(poID);
+    loadData();
+  };
+
+  const handleClearAllPOs = () => {
+    storageService.clearAllPurchaseOrders();
+    loadData();
+  };
+
+  const handleResetCommercialPipeline = () => {
+    storageService.resetCommercialPipelineToClean();
+    loadData();
+  };
+
+  const handleLoadDemoData = () => {
+    storageService.loadDemoShowcaseData();
+    loadData();
+  };
+
+  const handleSaveFollowUp = (activity: Omit<FollowUpActivity, 'id' | 'createdAt'>) => {
+    storageService.addFollowUp(activity);
     loadData();
   };
 
@@ -565,9 +629,53 @@ export default function App() {
               components={components}
               manufacturers={manufacturers}
               projects={projects}
+              quotations={allQuotations}
+              orders={allOrders}
+              followUps={allFollowUps}
               onNavigate={setCurrentView}
               onSelectComponent={setSelectedComponentForDetail}
               onOpenNewPrice={handleOpenRevisePrice}
+              onSavePO={handleSavePO}
+              onUpdatePO={handleUpdatePO}
+              onVerifyPO={handleVerifyPO}
+              onRejectPO={handleRejectPO}
+              onCancelPO={handleCancelPO}
+              onDeletePO={handleDeletePO}
+              onClearAllPOs={handleClearAllPOs}
+              onResetCommercialPipeline={handleResetCommercialPipeline}
+              onLoadDemoData={handleLoadDemoData}
+              onSaveFollowUp={handleSaveFollowUp}
+              onOpenQuotation={(q) => {
+                const prj = projects.find(p => p.projectID === q.projectID);
+                if (prj) handleSelectProjectForQuotation(prj);
+              }}
+            />
+          )}
+
+          {currentView === 'po_register' && (
+            <POBookingView
+              orders={allOrders}
+              quotations={allQuotations}
+              projects={projects}
+              onSavePO={handleSavePO}
+              onUpdatePO={handleUpdatePO}
+              onVerifyPO={handleVerifyPO}
+              onRejectPO={handleRejectPO}
+              onCancelPO={handleCancelPO}
+              onDeletePO={handleDeletePO}
+              onClearAllPOs={handleClearAllPOs}
+              onNavigateToQuotation={() => setCurrentView('quotations')}
+            />
+          )}
+
+          {currentView === 'follow_ups' && (
+            <FollowUpCenterView
+              followUps={allFollowUps}
+              quotations={allQuotations}
+              onOpenNewFollowUp={(quote) => {
+                setSelectedQuoteForFollowUp(quote || null);
+                setIsFollowUpModalOpen(true);
+              }}
             />
           )}
 
@@ -747,12 +855,34 @@ export default function App() {
             <PanelTypesView 
               panelTypes={panelTypes} 
               components={components}
+              projects={projects}
               onSelectComponent={(comp) => setSelectedComponentForDetail(comp)}
               onOpenAddComponent={() => {
                 setComponentToEdit(null);
                 setIsComponentFormOpen(true);
               }}
               onRefreshData={loadData}
+              onNavigateToAssemblies={() => setCurrentView('predefined_assemblies')}
+            />
+          )}
+
+          {currentView === 'predefined_assemblies' && (
+            <PredefinedAssembliesView
+              projects={projects}
+              activeProject={activeProject}
+              components={components}
+              onSelectProject={(prj) => {
+                setActiveProject(prj);
+                const prjPanels = storageService.getPanelsByProject(prj.projectID);
+                setActivePanels(prjPanels);
+                setCurrentView('workspace');
+              }}
+              onNavigateToWorkspace={(prj) => {
+                setActiveProject(prj);
+                const prjPanels = storageService.getPanelsByProject(prj.projectID);
+                setActivePanels(prjPanels);
+                setCurrentView('workspace');
+              }}
             />
           )}
 
@@ -901,11 +1031,20 @@ export default function App() {
         onSignOut={handleLogout}
       />
 
-      {/* Project Architecture & Engineering Specification PDF Modal */}
-      <ProjectDocumentationModal
-        isOpen={isDocModalOpen}
-        onClose={() => setIsDocModalOpen(false)}
-        currentCompany={company}
+      {/* Commercial Intelligence: Log Follow-up Activity Modal */}
+      <NewFollowUpModal
+        isOpen={isFollowUpModalOpen}
+        onClose={() => {
+          setIsFollowUpModalOpen(false);
+          setSelectedQuoteForFollowUp(null);
+        }}
+        quotations={allQuotations}
+        selectedQuotation={selectedQuoteForFollowUp}
+        onSaveFollowUp={(activity) => {
+          handleSaveFollowUp(activity);
+          setIsFollowUpModalOpen(false);
+          setSelectedQuoteForFollowUp(null);
+        }}
       />
     </div>
   );

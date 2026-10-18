@@ -2046,6 +2046,7 @@ export const INITIAL_PANEL_TYPES: PanelType[] = [
   { panelTypeID: 4, panelTypeCode: 'MCC', panelTypeName: 'Motor Control Center', description: 'Fixed and fully withdrawable motor starter compartments with VFDs', defaultFormOfSeparation: 'Form 4b Type 7', defaultIPRating: 'IP54', isActive: true },
   { panelTypeID: 5, panelTypeCode: 'APFC', panelTypeName: 'Automatic Power Factor Correction Panel', description: 'Capacitor bank with 7% detuned harmonic reactors and micro controller', defaultFormOfSeparation: 'Form 2b', defaultIPRating: 'IP43', isActive: true },
   { panelTypeID: 6, panelTypeCode: 'ATS', panelTypeName: 'Automatic Transfer Switch Panel', description: 'Mains - Generator dual incomer interlocked auto changeover panel', defaultFormOfSeparation: 'Form 3b', defaultIPRating: 'IP54', isActive: true },
+  { panelTypeID: 7, panelTypeCode: 'METER_CABINET', panelTypeName: 'Meter Cabinet / Metering Panel', description: 'Utility authority direct & CT kWh metering cabinet per DEWA / ADDC / SEWA specifications with transparent inspection window and sealable CT chamber', defaultFormOfSeparation: 'Form 2b', defaultIPRating: 'IP54', isActive: true },
 ];
 
 export const INITIAL_LABOUR_RATES: LabourRate[] = [

@@ -298,6 +298,53 @@ export const auditLogs = pgTable('audit_logs', {
   timestamp: timestamp('timestamp').defaultNow(),
 });
 
+// 14. PURCHASE ORDERS (Booked Commercial Orders & Verification)
+export const purchaseOrders = pgTable('purchase_orders', {
+  id: serial('id').primaryKey(),
+  companyId: integer('company_id').references(() => companies.id).notNull(),
+  poNumber: text('po_number').notNull(),
+  quotationId: integer('quotation_id').references(() => quotations.id),
+  projectId: integer('project_id').references(() => projects.id).notNull(),
+  clientName: text('client_name').notNull(),
+  salesperson: text('salesperson').notNull(),
+  estimator: text('estimator'),
+  poReceivedDate: date('po_received_date').defaultNow(),
+  poValueExVat: numeric('po_value_ex_vat', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  vatPercent: numeric('vat_percent', { precision: 5, scale: 2 }).notNull().default('5.00'),
+  vatAmount: numeric('vat_amount', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  poValueIncVat: numeric('po_value_inc_vat', { precision: 12, scale: 2 }).notNull().default('0.00'),
+  currency: text('currency').notNull().default('AED'),
+  status: text('status').notNull().default('DRAFT'), // 'DRAFT', 'SUBMITTED', 'VERIFIED', 'REJECTED', 'CANCELLED'
+  isPartialPo: boolean('is_partial_po').notNull().default(false),
+  partialPoNote: text('partial_po_note'),
+  poDocumentRef: text('po_document_ref'),
+  remarks: text('remarks'),
+  enteredBy: text('entered_by').notNull(),
+  verifiedBy: text('verified_by'),
+  verificationDate: date('verification_date'),
+  auditHistoryJson: text('audit_history_json'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// 15. FOLLOW-UP ACTIVITIES (Sales Pipeline CRM)
+export const followUpActivities = pgTable('follow_up_activities', {
+  id: serial('id').primaryKey(),
+  companyId: integer('company_id').references(() => companies.id).notNull(),
+  quotationId: integer('quotation_id').references(() => quotations.id),
+  projectId: integer('project_id').references(() => projects.id).notNull(),
+  clientName: text('client_name').notNull(),
+  salesperson: text('salesperson').notNull(),
+  contactPerson: text('contact_person'),
+  channel: text('channel').notNull().default('PHONE'), // 'PHONE', 'EMAIL', 'MEETING', 'SITE_VISIT', 'WHATSAPP'
+  notes: text('notes').notNull(),
+  nextActionDate: date('next_action_date'),
+  nextActionNotes: text('next_action_notes'),
+  statusUpdate: text('status_update'),
+  activityDate: date('activity_date').defaultNow(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // RELATIONS
 export const companiesRelations = relations(companies, ({ many }) => ({
   users: many(users),

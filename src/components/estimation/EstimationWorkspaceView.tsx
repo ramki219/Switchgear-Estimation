@@ -8,6 +8,7 @@ import {
 import { Badge } from '../common/Badge';
 import { AddFeederModal } from './AddFeederModal';
 import { PanelFormModal } from './PanelFormModal';
+import { PickAssemblyModal } from './PickAssemblyModal';
 import { 
   Calculator, 
   Layers, 
@@ -20,6 +21,7 @@ import {
   Cpu, 
   Zap, 
   Box, 
+  Boxes,
   Wrench,
   Check,
   Sparkles,
@@ -67,6 +69,7 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
   // Modals
   const [isAddFeederOpen, setIsAddFeederOpen] = useState(false);
   const [isPanelModalOpen, setIsPanelModalOpen] = useState(false);
+  const [isPickAssemblyOpen, setIsPickAssemblyOpen] = useState(false);
   const [panelToEdit, setPanelToEdit] = useState<EstimatePanel | null>(null);
 
   // Active panel
@@ -89,6 +92,7 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
   const [busbarPhases, setBusbarPhases] = useState<number>(4);
   const [busbarLength, setBusbarLength] = useState<number>(5.5);
   const [copperPrice, setCopperPrice] = useState<number>(42);
+  const [copperDensity, setCopperDensity] = useState<number>(0.00896);
   const [labourHours, setLabourHours] = useState<number>(6);
   const [labourRate, setLabourRate] = useState<number>(85);
   const [labourCost, setLabourCost] = useState<number>(510);
@@ -103,6 +107,11 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
       setBusbarPhases(activePanel.busbarPhasesCount || 4);
       setBusbarLength(activePanel.busbarTotalLengthMeters || 5.5);
       setCopperPrice(activePanel.copperBaseRatePerKg || 42);
+      setCopperDensity(
+        activePanel.copperDensityKgDm3 
+          ? (activePanel.copperDensityKgDm3 < 0.1 ? activePanel.copperDensityKgDm3 : Number((activePanel.copperDensityKgDm3 / 1000).toFixed(5))) 
+          : 0.00896
+      );
       setLabourHours(activePanel.busbarLabourHours || 6);
       setLabourRate(activePanel.busbarLabourRatePerHour || 85);
       setLabourCost(activePanel.busbarLabourCost || 510);
@@ -113,7 +122,7 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
 
   // Derived live quick busbar calculations
   const quickLiveCalc = useMemo(() => {
-    const rawDensity = activePanel?.copperDensityKgDm3 || 0.00896;
+    const rawDensity = copperDensity || 0.00896;
     const density = rawDensity < 0.1 ? rawDensity : rawDensity / 1000;
     const singleBarKgM = Number((busbarWidth * busbarThickness * density).toFixed(4));
     const systemKgM = Number((singleBarKgM * busbarRuns * busbarPhases).toFixed(3));
@@ -134,7 +143,7 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
       formulaTotal,
     };
   }, [
-    activePanel?.copperDensityKgDm3,
+    copperDensity,
     busbarWidth,
     busbarThickness,
     busbarRuns,
@@ -158,6 +167,7 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
       busbarPhasesCount: busbarPhases,
       busbarTotalLengthMeters: busbarLength,
       copperCrossSectionMm2: busbarWidth * busbarThickness * busbarRuns,
+      copperDensityKgDm3: copperDensity,
       copperWeightKg: quickLiveCalc.totalWeight,
       copperBaseRatePerKg: copperPrice,
       copperMaterialCost: quickLiveCalc.materialCost,
@@ -304,16 +314,27 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
           })}
         </div>
 
-        <button
-          onClick={() => {
-            setPanelToEdit(null);
-            setIsPanelModalOpen(true);
-          }}
-          className="bg-white hover:bg-slate-50 text-cyan-800 border border-slate-300 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 transition shadow-2xs"
-        >
-          <Plus className="w-3.5 h-3.5 text-cyan-700" />
-          <span>Add Panel</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setIsPickAssemblyOpen(true)}
+            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            title="Pick fixed design panel (ATS, Capacitor Banks, Motor Starters) with ready final prices"
+          >
+            <Boxes className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Pick Predefined Assembly</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setPanelToEdit(null);
+              setIsPanelModalOpen(true);
+            }}
+            className="bg-white hover:bg-slate-50 text-cyan-800 border border-slate-300 px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 text-cyan-700" />
+            <span>Add Custom Panel</span>
+          </button>
+        </div>
       </div>
 
       {/* Active Panel View */}
@@ -758,7 +779,31 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-slate-700 font-bold">Copper Density (kg/meter) *</label>
+                          {copperDensity !== 0.00896 && (
+                            <button
+                              type="button"
+                              onClick={() => setCopperDensity(0.00896)}
+                              className="text-[10px] text-cyan-700 underline font-semibold cursor-pointer"
+                              title="Reset to 0.00896"
+                            >
+                              Reset 0.00896
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number"
+                          step="any"
+                          value={copperDensity}
+                          onChange={(e) => setCopperDensity(Number(e.target.value))}
+                          className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-slate-900 font-bold focus:border-amber-500 focus:outline-none"
+                        />
+                        <span className="text-[10px] text-slate-500">Std: 0.00896 kg/m</span>
+                      </div>
+
                       <div>
                         <label className="block text-slate-700 font-bold mb-1">Applied Copper Price (AED/kg) *</label>
                         <input
@@ -1243,6 +1288,20 @@ export const EstimationWorkspaceView: React.FC<EstimationWorkspaceViewProps> = (
         projectID={project.projectID}
         panelTypes={panelTypes}
         components={components}
+      />
+
+      {/* Pick Predefined Assembly Modal */}
+      <PickAssemblyModal
+        isOpen={isPickAssemblyOpen}
+        onClose={() => setIsPickAssemblyOpen(false)}
+        projects={[project]}
+        activeProject={project}
+        onAssemblyPicked={(addedPanels) => {
+          if (addedPanels.length > 0) {
+            setSelectedPanelId(addedPanels[0].panelID);
+            onAddPanel(addedPanels[0]);
+          }
+        }}
       />
     </div>
   );
