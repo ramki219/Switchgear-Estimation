@@ -53,6 +53,9 @@ import {
   PredefinedAssembly
 } from '../types/index';
 import { PREDEFINED_ASSEMBLIES } from '../data/predefinedAssembliesData';
+import { doc, setDoc, deleteDoc, getDocs, collection, updateDoc, increment } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { authApprovalService } from './authApprovalService';
 
 const STORAGE_KEYS = {
   MANUFACTURERS: 'lv_estimator_manufacturers_v1',
@@ -73,14 +76,85 @@ const STORAGE_KEYS = {
 };
 
 class StorageService {
+  private memoryStore: Record<string, any> = {};
+  private activeTenantCode: string = 'EMIRATES-LV-01';
+
+  setActiveTenant(tenantId: string, companyCode?: string): void {
+    this.activeTenantCode = companyCode || tenantId;
+  }
+
+  getActiveTenantCode(): string {
+    return this.activeTenantCode;
+  }
+
+  async loadTenantProjectsFromFirestore(tenantId: string): Promise<Project[]> {
+    try {
+      const snap = await getDocs(collection(db, 'projects'));
+      const list: Project[] = [];
+      const panelsList: EstimatePanel[] = [];
+      const quotesList: Quotation[] = [];
+
+      snap.forEach(d => {
+        const data = d.data() as any;
+        if (data.tenantId === tenantId || data.tenantId === this.activeTenantCode || !data.tenantId) {
+          list.push({
+            projectID: Number(data.projectID || d.id),
+            projectCode: data.projectCode || `PRJ-${d.id}`,
+            projectName: data.projectName || 'Estimation Project',
+            clientName: data.clientName || 'Client',
+            consultantName: data.consultantName,
+            location: data.location,
+            authority: data.authority || 'DEWA',
+            status: data.status || 'IN_ESTIMATION',
+            createdDate: data.createdDate || data.createdAt?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+            dueDate: data.dueDate,
+            currency: data.currency || 'AED',
+            assignedEstimator: data.assignedEstimator || 'Estimator',
+            targetMarginPercent: data.targetMarginPercent ?? 15,
+            totalCost: data.totalCost ?? 0,
+            sellingPrice: data.sellingPrice ?? 0,
+            panelsCount: data.panelsCount ?? (Array.isArray(data.panels) ? data.panels.length : 0),
+            primaryOEM: data.primaryOEM || 'Schneider',
+            copperRatePerKg: data.copperRatePerKg ?? 42,
+          });
+
+          if (Array.isArray(data.panels) && data.panels.length > 0) {
+            data.panels.forEach((p: EstimatePanel) => {
+              if (!panelsList.some(item => item.panelID === p.panelID)) {
+                panelsList.push(p);
+              }
+            });
+          }
+          if (data.quotation) {
+            quotesList.push(data.quotation);
+          }
+        }
+      });
+
+      if (list.length > 0) {
+        this.saveProjects(list);
+        if (panelsList.length > 0) {
+          this.savePanels(panelsList);
+        }
+        if (quotesList.length > 0) {
+          this.saveQuotations(quotesList);
+        }
+        return list;
+      }
+    } catch (e) {
+      console.warn('loadTenantProjectsFromFirestore notice:', e);
+    }
+    return this.getProjects();
+  }
+
   // --- Manufacturers ---
   getManufacturers(): Manufacturer[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.MANUFACTURERS);
+    const raw = this.memoryStore[STORAGE_KEYS.MANUFACTURERS];
     if (!raw) {
       this.saveManufacturers(INITIAL_MANUFACTURERS);
       return INITIAL_MANUFACTURERS;
     }
-    const stored: Manufacturer[] = JSON.parse(raw);
+    const stored: Manufacturer[] = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
     let changed = false;
     for (const initMfg of INITIAL_MANUFACTURERS) {
       if (!stored.some(m => m.manufacturerCode === initMfg.manufacturerCode)) {
@@ -95,7 +169,7 @@ class StorageService {
   }
 
   saveManufacturers(data: Manufacturer[]): void {
-    localStorage.setItem(STORAGE_KEYS.MANUFACTURERS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.MANUFACTURERS] = data;
   }
 
   addManufacturer(m: Omit<Manufacturer, 'manufacturerID' | 'createdAt'>): Manufacturer {
@@ -123,16 +197,16 @@ class StorageService {
 
   // --- Categories ---
   getCategories(): ComponentCategory[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+    const raw = this.memoryStore[STORAGE_KEYS.CATEGORIES];
     if (!raw) {
       this.saveCategories(INITIAL_CATEGORIES);
       return INITIAL_CATEGORIES;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveCategories(data: ComponentCategory[]): void {
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.CATEGORIES] = data;
   }
 
   addCategory(c: Omit<ComponentCategory, 'categoryID'>): ComponentCategory {
@@ -150,16 +224,16 @@ class StorageService {
 
   // --- Suppliers ---
   getSuppliers(): Supplier[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
+    const raw = this.memoryStore[STORAGE_KEYS.SUPPLIERS];
     if (!raw) {
       this.saveSuppliers(INITIAL_SUPPLIERS);
       return INITIAL_SUPPLIERS;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveSuppliers(data: Supplier[]): void {
-    localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.SUPPLIERS] = data;
   }
 
   addSupplier(s: Omit<Supplier, 'supplierID' | 'createdAt'>): Supplier {
@@ -187,13 +261,13 @@ class StorageService {
 
   // --- Components ---
   getComponents(): Component[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.COMPONENTS);
+    const raw = this.memoryStore[STORAGE_KEYS.COMPONENTS];
     let components: Component[];
     if (!raw) {
       components = INITIAL_COMPONENTS;
       this.saveComponents(components);
     } else {
-      components = JSON.parse(raw);
+      components = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
       let changed = false;
       for (const initC of INITIAL_COMPONENTS) {
         if (!components.some(c => c.componentID === initC.componentID || c.componentCode === initC.componentCode)) {
@@ -220,7 +294,7 @@ class StorageService {
   }
 
   saveComponents(data: Component[]): void {
-    localStorage.setItem(STORAGE_KEYS.COMPONENTS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.COMPONENTS] = data;
   }
 
   addComponent(comp: Omit<Component, 'componentID' | 'createdAt'>): Component {
@@ -515,12 +589,12 @@ class StorageService {
 
   // --- Pricing with Strict Historical Preservation ---
   getPrices(): SupplierPrice[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PRICES);
+    const raw = this.memoryStore[STORAGE_KEYS.PRICES];
     if (!raw) {
       this.savePrices(INITIAL_PRICES);
       return INITIAL_PRICES;
     }
-    const stored: SupplierPrice[] = JSON.parse(raw);
+    const stored: SupplierPrice[] = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
     let changed = false;
     for (const initP of INITIAL_PRICES) {
       if (!stored.some(p => p.supplierPriceID === initP.supplierPriceID)) {
@@ -535,7 +609,7 @@ class StorageService {
   }
 
   savePrices(data: SupplierPrice[]): void {
-    localStorage.setItem(STORAGE_KEYS.PRICES, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.PRICES] = data;
   }
 
   /**
@@ -633,13 +707,13 @@ class StorageService {
 
   // --- Panel Types & Labour Rates ---
   getPanelTypes(): PanelType[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PANEL_TYPES);
+    const raw = this.memoryStore[STORAGE_KEYS.PANEL_TYPES];
     if (!raw) {
       this.savePanelTypes(INITIAL_PANEL_TYPES);
       return INITIAL_PANEL_TYPES;
     }
     try {
-      const list = JSON.parse(raw);
+      const list = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
       if (Array.isArray(list) && list.length > 0) {
         if (!list.some((p: PanelType) => p.panelTypeCode === 'METER_CABINET')) {
           const meterCabinet = INITIAL_PANEL_TYPES.find(p => p.panelTypeCode === 'METER_CABINET');
@@ -658,7 +732,7 @@ class StorageService {
   }
 
   savePanelTypes(data: PanelType[]): void {
-    localStorage.setItem(STORAGE_KEYS.PANEL_TYPES, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.PANEL_TYPES] = data;
   }
 
   addPanelType(pt: Omit<PanelType, 'panelTypeID'>): PanelType {
@@ -685,30 +759,30 @@ class StorageService {
   }
 
   getLabourRates(): LabourRate[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.LABOUR_RATES);
+    const raw = this.memoryStore[STORAGE_KEYS.LABOUR_RATES];
     if (!raw) {
       this.saveLabourRates(INITIAL_LABOUR_RATES);
       return INITIAL_LABOUR_RATES;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveLabourRates(data: LabourRate[]): void {
-    localStorage.setItem(STORAGE_KEYS.LABOUR_RATES, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.LABOUR_RATES] = data;
   }
 
   // --- Audit Logs ---
   getAuditLogs(): AuditLogEntry[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+    const raw = this.memoryStore[STORAGE_KEYS.AUDIT_LOGS];
     if (!raw) {
       this.saveAuditLogs(INITIAL_AUDIT_LOGS);
       return INITIAL_AUDIT_LOGS;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveAuditLogs(data: AuditLogEntry[]): void {
-    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.AUDIT_LOGS] = data;
   }
 
   addAuditLog(user: string, table: string, recordId: string, action: AuditLogEntry['action'], oldVal?: string, newVal?: string): void {
@@ -755,21 +829,8 @@ class StorageService {
   // ==========================================
   // TENANT ISOLATION HELPER
   // ==========================================
-  private getActiveTenantCode(): string {
-    try {
-      const raw = localStorage.getItem('switchgear_saas_company');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.companyCode) {
-          return parsed.companyCode;
-        }
-      }
-    } catch {}
-    return 'EMIRATES-LV-01';
-  }
-
   private isDefaultShowcaseTenant(code: string): boolean {
-    return code === 'EMIRATES-LV-01' || code === 'CLI-AGS-01';
+    return code === 'EMIRATES-LV-01' || code === 'DEFAULT' || code === 'tenant_default';
   }
 
   private getTenantScopedKey(baseKey: string): string {
@@ -781,27 +842,19 @@ class StorageService {
   }
 
   private syncTenantUsageToDirectory(projectsList: Project[]): void {
-    try {
-      const code = this.getActiveTenantCode();
-      const raw = localStorage.getItem('lv_estimator_client_companies_v2');
-      if (!raw) return;
-      const companies = JSON.parse(raw);
-      if (!Array.isArray(companies)) return;
-      const idx = companies.findIndex((c: any) => c.companyCode === code);
-      if (idx !== -1) {
-        companies[idx].associatedProjectsCount = projectsList.length;
-        companies[idx].totalPipelineValueAed = projectsList.reduce((acc, p) => acc + (p.sellingPrice || 0), 0);
-        localStorage.setItem('lv_estimator_client_companies_v2', JSON.stringify(companies));
-      }
-    } catch {}
+    const code = this.getActiveTenantCode();
+    const totalPipeline = projectsList.reduce((acc, p) => acc + (p.sellingPrice || 0), 0);
+    updateDoc(doc(db, 'tenants', code), {
+      projectsUsed: projectsList.length,
+      associatedProjectsCount: projectsList.length,
+      totalPipelineValueAed: totalPipeline,
+    }).catch(() => {});
   }
-
-  // ==========================================
   // PHASE 2: PROJECTS & ENQUIRIES
   // ==========================================
   getProjects(): Project[] {
     const key = this.getTenantScopedKey(STORAGE_KEYS.PROJECTS);
-    const raw = localStorage.getItem(key);
+    const raw = this.memoryStore[key];
     if (!raw) {
       const code = this.getActiveTenantCode();
       if (this.isDefaultShowcaseTenant(code)) {
@@ -838,12 +891,12 @@ class StorageService {
       this.saveProjects([]);
       return [];
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveProjects(data: Project[]): void {
     const key = this.getTenantScopedKey(STORAGE_KEYS.PROJECTS);
-    localStorage.setItem(key, JSON.stringify(data));
+    this.memoryStore[key] = data;
     this.syncTenantUsageToDirectory(data);
   }
 
@@ -863,6 +916,25 @@ class StorageService {
     };
     list.unshift(item);
     this.saveProjects(list);
+
+    // Save to Cloud Firestore collection `projects/{projectId}`
+    const projectDoc = {
+      ...item,
+      tenantId: this.activeTenantCode,
+      userId: auth.currentUser?.uid || '',
+      panels: [],
+      quotation: null,
+      bom: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setDoc(doc(db, 'projects', String(newId)), projectDoc).catch(err => {
+      console.warn('Firestore setDoc project notice:', err);
+    });
+
+    // Atomically increment projectsUsed on tenants/{tenantId}
+    authApprovalService.incrementProjectsUsed(this.activeTenantCode);
+
     this.addAuditLog('estimator', 'est.Projects', String(newId), 'CREATE_COMPONENT', undefined, `Project: ${item.projectCode} - ${item.projectName}`);
     return item;
   }
@@ -873,6 +945,19 @@ class StorageService {
     if (idx !== -1) {
       list[idx] = p;
       this.saveProjects(list);
+
+      const projectDoc = {
+        ...p,
+        tenantId: this.activeTenantCode,
+        userId: auth.currentUser?.uid || '',
+        panels: this.getPanelsByProject(p.projectID),
+        quotation: this.getQuotationByProject(p.projectID) || null,
+        bom: this.generateBOMForProject(p.projectID) || [],
+        updatedAt: new Date().toISOString(),
+      };
+      setDoc(doc(db, 'projects', String(p.projectID)), projectDoc, { merge: true }).catch(err => {
+        console.warn('Firestore updateProject notice:', err);
+      });
     }
   }
 
@@ -888,6 +973,31 @@ class StorageService {
     // Also delete associated quotation
     const quotes = this.getQuotations().filter(q => q.projectID !== projectID);
     this.saveQuotations(quotes);
+
+    // Delete from Firestore
+    deleteDoc(doc(db, 'projects', String(projectID))).catch(err => {
+      console.warn('Firestore deleteProject notice:', err);
+    });
+
+    // Atomically decrement projectsUsed
+    authApprovalService.decrementProjectsUsed(this.activeTenantCode);
+  }
+
+  syncProjectDetailsToFirestore(projectID: number): void {
+    const p = this.getProjectById(projectID);
+    if (!p) return;
+    const projectDoc = {
+      ...p,
+      tenantId: this.activeTenantCode,
+      userId: auth.currentUser?.uid || '',
+      panels: this.getPanelsByProject(projectID),
+      quotation: this.getQuotationByProject(projectID) || null,
+      bom: this.generateBOMForProject(projectID) || [],
+      updatedAt: new Date().toISOString(),
+    };
+    setDoc(doc(db, 'projects', String(projectID)), projectDoc, { merge: true }).catch(err => {
+      console.warn('syncProjectDetailsToFirestore notice:', err);
+    });
   }
 
   // ==========================================
@@ -895,7 +1005,7 @@ class StorageService {
   // ==========================================
   getPanels(): EstimatePanel[] {
     const key = this.getTenantScopedKey(STORAGE_KEYS.PANELS);
-    const raw = localStorage.getItem(key);
+    const raw = this.memoryStore[key];
     if (!raw) {
       const code = this.getActiveTenantCode();
       if (this.isDefaultShowcaseTenant(code)) {
@@ -905,12 +1015,12 @@ class StorageService {
       this.savePanels([]);
       return [];
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   savePanels(data: EstimatePanel[]): void {
     const key = this.getTenantScopedKey(STORAGE_KEYS.PANELS);
-    localStorage.setItem(key, JSON.stringify(data));
+    this.memoryStore[key] = data;
   }
 
   getPanelsByProject(projectID: number): EstimatePanel[] {
@@ -1172,7 +1282,7 @@ class StorageService {
   // ==========================================
   getQuotations(): Quotation[] {
     const key = this.getTenantScopedKey(STORAGE_KEYS.QUOTATIONS);
-    const raw = localStorage.getItem(key);
+    const raw = this.memoryStore[key];
     if (!raw) {
       const code = this.getActiveTenantCode();
       if (this.isDefaultShowcaseTenant(code)) {
@@ -1182,12 +1292,12 @@ class StorageService {
       this.saveQuotations([]);
       return [];
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveQuotations(data: Quotation[]): void {
     const key = this.getTenantScopedKey(STORAGE_KEYS.QUOTATIONS);
-    localStorage.setItem(key, JSON.stringify(data));
+    this.memoryStore[key] = data;
   }
 
   getQuotationByProject(projectID: number): Quotation | undefined {
@@ -1288,16 +1398,16 @@ class StorageService {
   // MODEL A: BUREAU CLIENTS & VALUE ENGINEERING
   // ==========================================
   getBureauClients(): BureauClient[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.BUREAU_CLIENTS);
+    const raw = this.memoryStore[STORAGE_KEYS.BUREAU_CLIENTS];
     if (!raw) {
       this.saveBureauClients(INITIAL_BUREAU_CLIENTS);
       return INITIAL_BUREAU_CLIENTS;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveBureauClients(data: BureauClient[]): void {
-    localStorage.setItem(STORAGE_KEYS.BUREAU_CLIENTS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.BUREAU_CLIENTS] = data;
   }
 
   addBureauClient(client: Omit<BureauClient, 'clientID'>): BureauClient {
@@ -1425,14 +1535,14 @@ class StorageService {
   // COMMERCIAL INTELLIGENCE: PURCHASE ORDERS & BOOKING
   // ==========================================
   getPurchaseOrders(): PurchaseOrder[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PURCHASE_ORDERS);
+    const raw = this.memoryStore[STORAGE_KEYS.PURCHASE_ORDERS];
     let orders: PurchaseOrder[] = [];
     if (!raw) {
       orders = INITIAL_PURCHASE_ORDERS;
       this.savePurchaseOrders(orders);
     } else {
       try {
-        orders = JSON.parse(raw);
+        orders = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
       } catch {
         orders = [];
       }
@@ -1468,7 +1578,7 @@ class StorageService {
       return true;
     });
 
-    // Auto-prune localStorage if any invalid or unquoted PO was detected
+    // Auto-prune memory store if any invalid or unquoted PO was detected
     if (validOrders.length !== orders.length) {
       this.savePurchaseOrders(validOrders);
     }
@@ -1477,7 +1587,7 @@ class StorageService {
   }
 
   savePurchaseOrders(data: PurchaseOrder[]): void {
-    localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.PURCHASE_ORDERS] = data;
   }
 
   getPurchaseOrderById(poID: number): PurchaseOrder | undefined {
@@ -1768,16 +1878,16 @@ class StorageService {
   // COMMERCIAL INTELLIGENCE: FOLLOW-UP ACTIVITIES
   // ==========================================
   getFollowUps(): FollowUpActivity[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.FOLLOW_UPS);
+    const raw = this.memoryStore[STORAGE_KEYS.FOLLOW_UPS];
     if (!raw) {
       this.saveFollowUps(INITIAL_FOLLOW_UPS);
       return INITIAL_FOLLOW_UPS;
     }
-    return JSON.parse(raw);
+    return (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
   }
 
   saveFollowUps(data: FollowUpActivity[]): void {
-    localStorage.setItem(STORAGE_KEYS.FOLLOW_UPS, JSON.stringify(data));
+    this.memoryStore[STORAGE_KEYS.FOLLOW_UPS] = data;
   }
 
   addFollowUp(activity: Omit<FollowUpActivity, 'id' | 'createdAt'>): FollowUpActivity {
@@ -1906,13 +2016,13 @@ class StorageService {
 
   // --- Predefined Fixed-Design Assemblies & Ready Final Prices ---
   getPredefinedAssemblies(): PredefinedAssembly[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES);
+    const raw = this.memoryStore[STORAGE_KEYS.PREDEFINED_ASSEMBLIES];
     if (!raw) {
       this.savePredefinedAssemblies(PREDEFINED_ASSEMBLIES);
       return PREDEFINED_ASSEMBLIES;
     }
     try {
-      const stored = JSON.parse(raw);
+      const stored = (Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw));
       if (Array.isArray(stored) && stored.length > 0) {
         // Auto-merge any missing standard assemblies (e.g. newly introduced METER_CABINET)
         const storedIds = new Set(stored.map((a: PredefinedAssembly) => a.id));
@@ -1932,7 +2042,7 @@ class StorageService {
   }
 
   savePredefinedAssemblies(assemblies: PredefinedAssembly[]): void {
-    localStorage.setItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES, JSON.stringify(assemblies));
+    this.memoryStore[STORAGE_KEYS.PREDEFINED_ASSEMBLIES] = assemblies;
   }
 
   recalculatePredefinedAssembly(assembly: PredefinedAssembly): PredefinedAssembly {
@@ -2096,21 +2206,7 @@ class StorageService {
 
   // Reset to default seed data
   resetAllData(): void {
-    localStorage.removeItem(STORAGE_KEYS.MANUFACTURERS);
-    localStorage.removeItem(STORAGE_KEYS.CATEGORIES);
-    localStorage.removeItem(STORAGE_KEYS.COMPONENTS);
-    localStorage.removeItem(STORAGE_KEYS.SUPPLIERS);
-    localStorage.removeItem(STORAGE_KEYS.PRICES);
-    localStorage.removeItem(STORAGE_KEYS.PANEL_TYPES);
-    localStorage.removeItem(STORAGE_KEYS.LABOUR_RATES);
-    localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
-    localStorage.removeItem(STORAGE_KEYS.PROJECTS);
-    localStorage.removeItem(STORAGE_KEYS.PANELS);
-    localStorage.removeItem(STORAGE_KEYS.QUOTATIONS);
-    localStorage.removeItem(STORAGE_KEYS.BUREAU_CLIENTS);
-    localStorage.removeItem(STORAGE_KEYS.PURCHASE_ORDERS);
-    localStorage.removeItem(STORAGE_KEYS.FOLLOW_UPS);
-    localStorage.removeItem(STORAGE_KEYS.PREDEFINED_ASSEMBLIES);
+    this.memoryStore = {};
   }
 }
 

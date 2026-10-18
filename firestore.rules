@@ -4,30 +4,89 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    function isOwner(uid) {
-      return isAuthenticated() && request.auth.uid == uid;
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
+
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    function isAdmin() {
+
+    function isOwnerAdmin() {
       return isAuthenticated() && (
-        getUserData().role == 'ADMIN' ||
-        request.auth.token.admin == true
+        request.auth.token.email == 'admin@switchgearestimator.com' ||
+        request.auth.token.email == 'admin@lvswitchgear.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          getUserData().role == 'Admin' ||
+          getUserData().role == 'ADMIN'
+        ))
       );
     }
 
     match /users/{uid} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.auth.uid == uid;
-      allow update: if isAdmin() || (isOwner(uid) && request.resource.data.role == resource.data.role && request.resource.data.approved == resource.data.approved);
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (isOwner(uid) || isOwnerAdmin());
+      allow create: if isAuthenticated() && (isOwner(uid) || isOwnerAdmin());
+      allow update: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (isOwner(uid) && request.resource.data.role == resource.data.role && request.resource.data.status == resource.data.status)
+      );
+      allow delete: if isOwnerAdmin();
     }
 
-    match /companyRegistrations/{registrationId} {
-      allow create: if true;
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.email == request.auth.token.email);
-      allow update, delete: if isAdmin();
+    match /tenants/{tenantId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().tenantId == tenantId)
+      );
+      allow delete: if isOwnerAdmin();
+    }
+
+    match /subscriptionRequests/{requestId} {
+      allow read: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (resource.data.userEmail == request.auth.token.email) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().tenantId == resource.data.tenantId)
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isOwnerAdmin();
+    }
+
+    match /settings/paymentConfig {
+      allow read: if true;
+      allow write: if isOwnerAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().tenantId == resource.data.tenantId) ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.tenantId == null
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().tenantId == resource.data.tenantId) ||
+        resource.data.userId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        isOwnerAdmin() || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().tenantId == resource.data.tenantId) ||
+        resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /components/{componentId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwnerAdmin();
+    }
+
+    // Default match for backwards compatibility with existing collections
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
     }
   }
 }

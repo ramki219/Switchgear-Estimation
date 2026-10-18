@@ -1,39 +1,63 @@
 // src/services/authApprovalService.ts
-import { db } from '../lib/firebase';
+// 100% Firebase Authentication + Cloud Firestore Implementation (Zero localStorage)
+
 import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signInWithPopup,
+  signOut as fbSignOut,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import { 
+  collection, 
   doc, 
+  getDoc, 
+  getDocs, 
   setDoc, 
+  updateDoc, 
+  deleteDoc,
+  onSnapshot, 
+  increment,
+  query,
+  orderBy,
 } from 'firebase/firestore';
+import { auth, db, googleAuthProvider } from '../lib/firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { CompanyTenant, SaaSPlan, SaaSRole, SaaSSubscription, SaaSUser } from '../types';
 
-export type UserRole = 'ADMIN' | 'CLIENT' | 'ESTIMATION_ENGINEER' | 'COMPANY_OWNER';
-export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type UserRole = 'ADMIN' | 'CLIENT' | 'ESTIMATION_ENGINEER' | 'COMPANY_OWNER' | 'Admin' | 'Estimator';
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'Approved' | 'Pending' | 'Rejected';
 
 export interface RegisteredClientCompany {
-  id: string; // registrationId or companyId
+  id: string; // tenantId
   numericId?: number;
   companyCode: string;
   companyName: string;
-  tradeLicenseNo: string;
-  country: string;
-  city: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
+  tradeLicenseNo?: string;
+  gstNumber?: string;
+  country?: string;
+  city?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
   vatTrn?: string;
   address?: string;
   status: ApprovalStatus;
-  plan: 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS' | 'ENTERPRISE';
+  plan: 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS' | 'ENTERPRISE' | 'Free Trial' | string;
+  projectsUsed: number;
+  projectsQuota: number;
   maxProjects: number;
   maxUsers: number;
-  subscriptionStatus?: 'TRIAL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'PAST_DUE' | 'CANCELLED';
+  subscriptionStatus?: 'TRIAL' | 'ACTIVE' | 'PENDING_APPROVAL' | 'PAST_DUE' | 'CANCELLED' | 'Trial' | 'Active' | 'Pending' | string;
+  subscriptionExpiryDate?: string;
   requestedPlan?: SaaSPlan;
   billingCycle?: 'MONTHLY' | 'ANNUAL';
   paymentReference?: string;
   paymentMethod?: string;
   paymentSubmittedAt?: string;
-  targetAuthority: string;
-  submittedAt: string;
+  targetAuthority?: string;
+  submittedAt?: string;
+  createdAt?: string;
   approvedAt?: string;
   approvedBy?: string;
   rejectionReason?: string;
@@ -46,21 +70,55 @@ export interface AppUserProfile {
   email: string;
   password?: string;
   fullName: string;
+  name?: string;
   role: UserRole;
   saasRole?: SaaSRole;
+  status: 'Approved' | 'Pending' | 'Rejected';
   approved: boolean;
+  tenantId: string;
   companyId?: string;
   companyName?: string;
   phone?: string;
+  gstNumber?: string;
+  tradeLicenseNo?: string;
   createdAt: string;
   approvedAt?: string;
   approvedBy?: string;
   lastLoginAt?: string;
 }
 
+export interface SubscriptionUpgradeRequest {
+  id: string;
+  tenantId: string;
+  companyName: string;
+  userEmail: string;
+  requestedPlan: SaaSPlan | string;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  transactionReference: string;
+  upiId?: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  requestedAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  rejectionReason?: string;
+}
+
 export interface PlatformPaymentSettings {
+  // Global Owner Admin Payment Config
+  upiId?: string;
+  upiMerchantName?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  bankName?: string;
+  razorpayPaymentLink?: string;
+  whatsappSupportNumber?: string;
+  autoApproveUsers?: boolean;
+
+  // International / Bank Transfer configuration
   beneficiaryName: string;
-  bankName: string;
   iban: string;
   swiftCode: string;
   swiftBic?: string;
@@ -74,7 +132,7 @@ export interface PlatformPaymentSettings {
   stripeProfessionalUrl?: string;
   stripeAdvancedUrl?: string;
   stripeBusinessUrl?: string;
-  stripeLinks: {
+  stripeLinks?: {
     STARTER_MONTHLY: string;
     STARTER_ANNUAL: string;
     PROFESSIONAL_MONTHLY: string;
@@ -86,30 +144,37 @@ export interface PlatformPaymentSettings {
   };
 }
 
-export const PLAN_LIMITS: Record<SaaSPlan, { priceMonthly: number; priceAnnual: number; maxProjects: number; maxUsers: number }> = {
+export const PLAN_LIMITS: Record<string, { priceMonthly: number; priceAnnual: number; maxProjects: number; maxUsers: number }> = {
   TRIAL: { priceMonthly: 0, priceAnnual: 0, maxProjects: 2, maxUsers: 1 },
+  'Free Trial': { priceMonthly: 0, priceAnnual: 0, maxProjects: 2, maxUsers: 1 },
   STARTER: { priceMonthly: 299, priceAnnual: 2990, maxProjects: 10, maxUsers: 2 },
+  Starter: { priceMonthly: 299, priceAnnual: 2990, maxProjects: 10, maxUsers: 2 },
   PROFESSIONAL: { priceMonthly: 499, priceAnnual: 4990, maxProjects: 50, maxUsers: 5 },
+  Professional: { priceMonthly: 499, priceAnnual: 4990, maxProjects: 50, maxUsers: 5 },
   ADVANCED: { priceMonthly: 999, priceAnnual: 9990, maxProjects: 200, maxUsers: 15 },
+  Advanced: { priceMonthly: 999, priceAnnual: 9990, maxProjects: 200, maxUsers: 15 },
   BUSINESS: { priceMonthly: 1999, priceAnnual: 19990, maxProjects: 1000, maxUsers: 50 },
+  Business: { priceMonthly: 1999, priceAnnual: 19990, maxProjects: 1000, maxUsers: 50 },
   ENTERPRISE: { priceMonthly: 4999, priceAnnual: 49990, maxProjects: 9999, maxUsers: 250 },
+  Enterprise: { priceMonthly: 4999, priceAnnual: 49990, maxProjects: 9999, maxUsers: 250 },
 };
 
-const STORAGE_KEYS = {
-  CLIENT_COMPANIES: 'lv_estimator_client_companies_v2',
-  APP_USERS: 'lv_estimator_app_users_v2',
-  CURRENT_ACTIVE_USER: 'lv_estimator_active_session_user_v1',
-  PLATFORM_PAYMENT_SETTINGS: 'lv_estimator_platform_payment_settings_v1',
-};
-
-const DEFAULT_PAYMENT_SETTINGS: PlatformPaymentSettings = {
+export const DEFAULT_PAYMENT_SETTINGS: PlatformPaymentSettings = {
+  upiId: 'switchgear.estimation@oksbi',
+  upiMerchantName: 'LV Switchgear Estimator SaaS Ltd',
+  bankAccountName: 'LV Switchgear Estimator SaaS LLC',
+  bankAccountNumber: '03312345678901',
+  bankIfsc: 'SBIN0001234',
+  bankName: 'Emirates NBD Bank / SBI Commercial',
+  razorpayPaymentLink: 'https://rzp.io/l/switchgear-pro',
+  whatsappSupportNumber: '+971 50 345 6789',
+  autoApproveUsers: true,
   beneficiaryName: 'LV Switchgear Estimator SaaS LLC',
-  bankName: 'Emirates NBD Bank PJSC (Dubai)',
   iban: 'AE29 0331 2345 6789 0123 456',
   swiftCode: 'EBILAEADXXX',
   swiftBic: 'EBILAEADXXX',
   vatTrn: '100234567800003',
-  supportEmail: 'billing@lvestimator.ae',
+  supportEmail: 'billing@switchgearestimator.com',
   supportPhone: '+971 4 345 6789',
   requireAdminApprovalOnSignup: false,
   defaultTrialProjectsLimit: 2,
@@ -130,509 +195,615 @@ const DEFAULT_PAYMENT_SETTINGS: PlatformPaymentSettings = {
   },
 };
 
-const INITIAL_CLIENT_COMPANIES: RegisteredClientCompany[] = [
-  {
-    id: 'comp-ags-01',
-    numericId: 1,
-    companyCode: 'EMIRATES-LV-01',
-    companyName: 'Al Ghandi Switchgear LLC',
-    tradeLicenseNo: 'DXB-TL-482910',
-    country: 'United Arab Emirates',
-    city: 'Dubai',
-    contactPerson: 'Eng. Tariq Mansoor',
-    email: 'tariq.m@alghandiswitchgear.ae',
-    phone: '+971 4 231 8800',
-    vatTrn: '100234567800003',
-    address: 'Ras Al Khor Industrial Area 2, Dubai, UAE',
-    status: 'APPROVED',
-    plan: 'BUSINESS',
-    maxProjects: 1000,
-    maxUsers: 50,
-    subscriptionStatus: 'ACTIVE',
-    targetAuthority: 'DEWA / SEWA',
-    submittedAt: '2026-08-15T09:30:00Z',
-    approvedAt: '2026-08-16T11:00:00Z',
-    approvedBy: 'System Administrator',
-    associatedProjectsCount: 4,
-    totalPipelineValueAed: 1850000,
-  },
-  {
-    id: 'comp-dan-02',
-    numericId: 2,
-    companyCode: 'GULF-PANELS-02',
-    companyName: 'Danway Electrical & Mechanical Engineering',
-    tradeLicenseNo: 'SHJ-TL-882194',
-    country: 'United Arab Emirates',
-    city: 'Sharjah',
-    contactPerson: 'Eng. K. Suresh',
-    email: 'suresh.k@danwayeme.com',
-    phone: '+971 6 534 5111',
-    vatTrn: '100987654300003',
-    address: 'Industrial Area 13, Sharjah, UAE',
-    status: 'APPROVED',
-    plan: 'ADVANCED',
-    maxProjects: 200,
-    maxUsers: 15,
-    subscriptionStatus: 'ACTIVE',
-    targetAuthority: 'SEWA / DEWA / FEWA',
-    submittedAt: '2026-08-20T14:15:00Z',
-    approvedAt: '2026-08-21T10:00:00Z',
-    approvedBy: 'System Administrator',
-    associatedProjectsCount: 3,
-    totalPipelineValueAed: 2420000,
-  },
-  {
-    id: 'comp-pps-03',
-    numericId: 3,
-    companyCode: 'CLI-PPS-03',
-    companyName: 'Power Plus Switchboards Manufacturing LLC',
-    tradeLicenseNo: 'DXB-TL-991204',
-    country: 'United Arab Emirates',
-    city: 'Dubai',
-    contactPerson: 'Eng. Hisham Al-Sayed',
-    email: 'hisham.s@powerplusswitchgear.com',
-    phone: '+971 4 883 4500',
-    vatTrn: '100456123400003',
-    address: 'Dubai Investments Park (DIP 1), Dubai, UAE',
-    status: 'APPROVED',
-    plan: 'PROFESSIONAL',
-    maxProjects: 50,
-    maxUsers: 5,
-    subscriptionStatus: 'ACTIVE',
-    targetAuthority: 'DEWA',
-    submittedAt: '2026-09-02T11:45:00Z',
-    approvedAt: '2026-09-03T08:30:00Z',
-    approvedBy: 'System Administrator',
-    associatedProjectsCount: 2,
-    totalPipelineValueAed: 960000,
-  },
-  {
-    id: 'comp-gulf-04',
-    numericId: 4,
-    companyCode: 'CLI-GEC-04',
-    companyName: 'Gulf Electro-Mechanical Contracting LLC',
-    tradeLicenseNo: 'AUH-CN-330192',
-    country: 'United Arab Emirates',
-    city: 'Abu Dhabi',
-    contactPerson: 'Mustafa Al-Hashimi',
-    email: 'm.hashimi@gulfelectro.ae',
-    phone: '+971 2 642 9911',
-    vatTrn: '100345678900003',
-    address: 'Musaffah Industrial M-14, Abu Dhabi, UAE',
-    status: 'PENDING',
-    plan: 'TRIAL',
-    maxProjects: 2,
-    maxUsers: 1,
-    subscriptionStatus: 'PENDING_APPROVAL',
-    requestedPlan: 'PROFESSIONAL',
-    paymentReference: 'ENBD-TRF-8829104',
-    paymentMethod: 'BANK_TRANSFER',
-    paymentSubmittedAt: '2026-10-16T16:20:00Z',
-    targetAuthority: 'ADDC / AADC',
-    submittedAt: '2026-10-16T16:20:00Z',
-    associatedProjectsCount: 0,
-    totalPipelineValueAed: 0,
-  },
-  {
-    id: 'comp-arab-05',
-    numericId: 5,
-    companyCode: 'CLI-APE-05',
-    companyName: 'Arabian Power & Engineering Systems',
-    tradeLicenseNo: 'RAK-TL-110293',
-    country: 'United Arab Emirates',
-    city: 'Ras Al Khaimah',
-    contactPerson: 'Zaid Al-Balooshi',
-    email: 'procurement@arabianpower.ae',
-    phone: '+971 7 244 8822',
-    address: 'Al Hamra Industrial Zone, RAK, UAE',
-    status: 'PENDING',
-    plan: 'TRIAL',
-    maxProjects: 2,
-    maxUsers: 1,
-    subscriptionStatus: 'TRIAL',
-    targetAuthority: 'FEWA / Etihad WE',
-    submittedAt: '2026-10-17T08:10:00Z',
-    associatedProjectsCount: 0,
-    totalPipelineValueAed: 0,
-  }
-];
-
-const INITIAL_USERS: AppUserProfile[] = [
-  {
-    uid: 'admin-lead-01',
-    email: 'admin@lvswitchgear.com',
-    password: 'Admin@2026',
-    fullName: 'Platform Owner & Super Admin',
-    role: 'ADMIN',
-    saasRole: 'PLATFORM_ADMIN',
-    approved: true,
-    companyId: 'comp-ags-01',
-    companyName: 'SwitchgearOS Platform HQ',
-    createdAt: '2026-08-01T08:00:00Z',
-    approvedAt: '2026-08-01T08:00:00Z',
-    approvedBy: 'Super Admin',
-  },
-  {
-    uid: 'user-client-01',
-    email: 'tariq.m@alghandiswitchgear.ae',
-    password: 'Client@2026',
-    fullName: 'Eng. Tariq Mansoor',
-    role: 'COMPANY_OWNER',
-    saasRole: 'COMPANY_OWNER',
-    approved: true,
-    companyId: 'comp-ags-01',
-    companyName: 'Al Ghandi Switchgear LLC',
-    createdAt: '2026-08-15T09:30:00Z',
-    approvedAt: '2026-08-16T11:00:00Z',
-    approvedBy: 'Platform Owner & Super Admin',
-  },
-  {
-    uid: 'user-client-02',
-    email: 'suresh.k@danwayeme.com',
-    password: 'Client@2026',
-    fullName: 'Eng. K. Suresh',
-    role: 'ESTIMATION_ENGINEER',
-    saasRole: 'ESTIMATION_ENGINEER',
-    approved: true,
-    companyId: 'comp-dan-02',
-    companyName: 'Danway Electrical & Mechanical Engineering',
-    createdAt: '2026-08-20T14:15:00Z',
-    approvedAt: '2026-08-21T10:00:00Z',
-    approvedBy: 'Platform Owner & Super Admin',
-  },
-  {
-    uid: 'user-pending-01',
-    email: 'm.hashimi@gulfelectro.ae',
-    password: 'Client@2026',
-    fullName: 'Mustafa Al-Hashimi',
-    role: 'COMPANY_OWNER',
-    saasRole: 'COMPANY_OWNER',
-    approved: false,
-    companyId: 'comp-gulf-04',
-    companyName: 'Gulf Electro-Mechanical Contracting LLC',
-    createdAt: '2026-10-16T16:20:00Z',
-  },
-  {
-    uid: 'user-pending-02',
-    email: 'khalid.engineer@gmail.com',
-    password: 'Client@2026',
-    fullName: 'Eng. Khalid Mansoori',
-    role: 'ESTIMATION_ENGINEER',
-    saasRole: 'ESTIMATION_ENGINEER',
-    approved: false,
-    companyId: 'comp-arab-05',
-    companyName: 'Arabian Power & Engineering Systems',
-    createdAt: '2026-10-17T09:40:00Z',
-  }
-];
-
-function normalizePlan(plan: string): SaaSPlan {
-  if (plan === 'ENTERPRISE' || plan === 'BUSINESS') return 'BUSINESS';
-  if (plan === 'ADVANCED') return 'ADVANCED';
-  if (plan === 'PROFESSIONAL') return 'PROFESSIONAL';
-  if (plan === 'STARTER') return 'STARTER';
-  return 'TRIAL';
+function normalizePlan(plan?: string): SaaSPlan {
+  if (!plan) return 'PROFESSIONAL';
+  const upper = plan.toUpperCase();
+  if (upper.includes('TRIAL') || upper.includes('FREE')) return 'TRIAL';
+  if (upper.includes('STARTER')) return 'STARTER';
+  if (upper.includes('ADVANCED')) return 'ADVANCED';
+  if (upper.includes('BUSINESS')) return 'BUSINESS';
+  if (upper.includes('ENTERPRISE')) return 'ENTERPRISE';
+  return 'PROFESSIONAL';
 }
 
 class AuthApprovalService {
-  // Sync to Firestore if online, with graceful fallback
-  private async syncCompanyToFirestore(company: RegisteredClientCompany) {
+  // In-memory live mirrors populated by real-time Firestore onSnapshot listeners (Zero localStorage)
+  private memoryUsers: AppUserProfile[] = [];
+  private memoryTenants: RegisteredClientCompany[] = [];
+  private memoryRequests: SubscriptionUpgradeRequest[] = [];
+  private memoryPaymentSettings: PlatformPaymentSettings = DEFAULT_PAYMENT_SETTINGS;
+  private unsubscribeListeners: Array<() => void> = [];
+  private initialized: boolean = false;
+
+  constructor() {
+    this.initFirestoreListeners();
+  }
+
+  // Initialize real-time Cloud Firestore listeners for 100% reactive state without localStorage
+  public initFirestoreListeners(): void {
+    if (this.initialized) return;
+    this.initialized = true;
+
     try {
-      const docRef = doc(db, 'companyRegistrations', company.id);
-      await setDoc(docRef, {
-        registrationId: company.id,
-        companyCode: company.companyCode,
-        companyName: company.companyName,
-        email: company.email,
-        status: company.status,
-        submittedAt: company.submittedAt,
-        tradeLicenseNo: company.tradeLicenseNo,
-        country: company.country,
-        city: company.city,
-        contactPerson: company.contactPerson,
-        phone: company.phone,
-        plan: company.plan,
-        maxProjects: company.maxProjects,
-        maxUsers: company.maxUsers,
-        subscriptionStatus: company.subscriptionStatus || 'TRIAL',
-        requestedPlan: company.requestedPlan || null,
-        paymentReference: company.paymentReference || null,
-        targetAuthority: company.targetAuthority,
-      }, { merge: true });
+      // 1. Payment Settings / Config listener
+      const configRef = doc(db, 'settings', 'paymentConfig');
+      const unsubConfig = onSnapshot(configRef, (snap) => {
+        if (snap.exists()) {
+          this.memoryPaymentSettings = { ...DEFAULT_PAYMENT_SETTINGS, ...(snap.data() as PlatformPaymentSettings) };
+        } else {
+          // Initialize default payment config in Firestore
+          setDoc(configRef, DEFAULT_PAYMENT_SETTINGS).catch((err) => {
+            console.warn('Initial paymentConfig set notice:', err);
+          });
+        }
+      }, (err) => {
+        console.warn('paymentConfig snapshot notice:', err);
+      });
+      this.unsubscribeListeners.push(unsubConfig);
+
+      // 2. Tenants listener
+      const tenantsRef = collection(db, 'tenants');
+      const unsubTenants = onSnapshot(tenantsRef, (snapshot) => {
+        const list: RegisteredClientCompany[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          const planKey = normalizePlan(data.plan);
+          const limits = PLAN_LIMITS[planKey] || PLAN_LIMITS.PROFESSIONAL;
+          list.push({
+            id: d.id,
+            companyCode: data.companyCode || d.id,
+            companyName: data.companyName || 'Switchgear Enterprise',
+            tradeLicenseNo: data.tradeLicenseNo || data.gstNumber || '',
+            gstNumber: data.gstNumber || '',
+            country: data.country || 'United Arab Emirates',
+            city: data.city || 'Dubai',
+            contactPerson: data.contactPerson || '',
+            email: data.email || '',
+            phone: data.phone || '',
+            vatTrn: data.vatTrn || '',
+            status: data.status || 'APPROVED',
+            plan: data.plan || 'Free Trial',
+            projectsUsed: data.projectsUsed ?? 0,
+            projectsQuota: data.projectsQuota ?? limits.maxProjects,
+            maxProjects: data.projectsQuota ?? limits.maxProjects,
+            maxUsers: data.maxUsers ?? limits.maxUsers,
+            subscriptionStatus: data.subscriptionStatus || 'Trial',
+            subscriptionExpiryDate: data.subscriptionExpiryDate,
+            requestedPlan: data.requestedPlan,
+            billingCycle: data.billingCycle,
+            paymentReference: data.paymentReference,
+            createdAt: data.createdAt,
+            submittedAt: data.createdAt,
+          });
+        });
+        this.memoryTenants = list;
+      }, (err) => {
+        console.warn('tenants snapshot notice:', err);
+      });
+      this.unsubscribeListeners.push(unsubTenants);
+
+      // 3. Users listener
+      const usersRef = collection(db, 'users');
+      const unsubUsers = onSnapshot(usersRef, (snapshot) => {
+        const list: AppUserProfile[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          const isApproved = data.status === 'Approved' || data.approved === true;
+          list.push({
+            uid: d.id,
+            email: data.email || '',
+            name: data.name || data.fullName || '',
+            fullName: data.name || data.fullName || '',
+            role: data.role || 'Estimator',
+            saasRole: data.saasRole || (data.role === 'Admin' ? 'PLATFORM_ADMIN' : 'COMPANY_OWNER'),
+            status: data.status || (isApproved ? 'Approved' : 'Pending'),
+            approved: isApproved,
+            tenantId: data.tenantId || '',
+            companyId: data.tenantId || data.companyId || '',
+            companyName: data.companyName || '',
+            phone: data.phone || '',
+            gstNumber: data.gstNumber || '',
+            createdAt: data.createdAt || new Date().toISOString(),
+          });
+        });
+        this.memoryUsers = list;
+      }, (err) => {
+        console.warn('users snapshot notice:', err);
+      });
+      this.unsubscribeListeners.push(unsubUsers);
+
+      // 4. Subscription Requests listener
+      const requestsRef = collection(db, 'subscriptionRequests');
+      const unsubRequests = onSnapshot(requestsRef, (snapshot) => {
+        const list: SubscriptionUpgradeRequest[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          list.push({
+            id: d.id,
+            tenantId: data.tenantId || '',
+            companyName: data.companyName || '',
+            userEmail: data.userEmail || '',
+            requestedPlan: data.requestedPlan || 'Professional',
+            amount: data.amount || 0,
+            currency: data.currency || 'AED',
+            paymentMethod: data.paymentMethod || 'BANK_TRANSFER',
+            transactionReference: data.transactionReference || '',
+            upiId: data.upiId,
+            status: data.status || 'Pending',
+            requestedAt: data.requestedAt || new Date().toISOString(),
+            approvedAt: data.approvedAt,
+            approvedBy: data.approvedBy,
+            rejectionReason: data.rejectionReason,
+          });
+        });
+        this.memoryRequests = list;
+      }, (err) => {
+        console.warn('subscriptionRequests snapshot notice:', err);
+      });
+      this.unsubscribeListeners.push(unsubRequests);
     } catch (e) {
-      console.warn('Firestore company sync notice (offline or rule mode):', e);
+      console.warn('Firestore real-time listeners initialization notice:', e);
     }
   }
 
-  private async syncUserToFirestore(user: AppUserProfile) {
-    try {
-      const docRef = doc(db, 'users', user.uid);
-      await setDoc(docRef, {
-        uid: user.uid,
-        email: user.email,
-        role: user.role === 'ADMIN' ? 'ADMIN' : 'CLIENT',
-        approved: user.approved,
-        companyId: user.companyId || '',
-        fullName: user.fullName,
-        createdAt: user.createdAt,
-      }, { merge: true });
-    } catch (e) {
-      console.warn('Firestore user sync notice (offline or rule mode):', e);
-    }
-  }
-
-  // --- PLATFORM PAYMENT SETTINGS ---
-  getPaymentSettings(): PlatformPaymentSettings {
-    const raw = localStorage.getItem(STORAGE_KEYS.PLATFORM_PAYMENT_SETTINGS);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.PLATFORM_PAYMENT_SETTINGS, JSON.stringify(DEFAULT_PAYMENT_SETTINGS));
-      return DEFAULT_PAYMENT_SETTINGS;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      return { 
-        ...DEFAULT_PAYMENT_SETTINGS, 
-        ...parsed,
-        swiftBic: parsed.swiftBic || parsed.swiftCode || DEFAULT_PAYMENT_SETTINGS.swiftBic,
-        trialProjectLimit: parsed.trialProjectLimit || parsed.defaultTrialProjectsLimit || DEFAULT_PAYMENT_SETTINGS.trialProjectLimit,
-      };
-    } catch {
-      return DEFAULT_PAYMENT_SETTINGS;
-    }
-  }
-
-  savePaymentSettings(settings: PlatformPaymentSettings): PlatformPaymentSettings {
-    const updated: PlatformPaymentSettings = {
-      ...settings,
-      swiftCode: settings.swiftCode || settings.swiftBic || '',
-      swiftBic: settings.swiftBic || settings.swiftCode || '',
-      defaultTrialProjectsLimit: settings.defaultTrialProjectsLimit || settings.trialProjectLimit || 2,
-      trialProjectLimit: settings.trialProjectLimit || settings.defaultTrialProjectsLimit || 2,
-    };
-    localStorage.setItem(STORAGE_KEYS.PLATFORM_PAYMENT_SETTINGS, JSON.stringify(updated));
-    return updated;
-  }
-
-  // --- CLIENT COMPANIES ---
-  getClientCompanies(): RegisteredClientCompany[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.CLIENT_COMPANIES);
-    if (!raw) {
-      this.saveClientCompanies(INITIAL_CLIENT_COMPANIES);
-      return INITIAL_CLIENT_COMPANIES;
-    }
-    try {
-      const parsed: RegisteredClientCompany[] = JSON.parse(raw);
-      return parsed.map(c => ({
-        ...c,
-        maxProjects: c.maxProjects ?? PLAN_LIMITS[normalizePlan(c.plan)].maxProjects,
-        maxUsers: c.maxUsers ?? PLAN_LIMITS[normalizePlan(c.plan)].maxUsers,
-      }));
-    } catch {
-      return INITIAL_CLIENT_COMPANIES;
-    }
-  }
-
-  saveClientCompanies(list: RegisteredClientCompany[]): void {
-    localStorage.setItem(STORAGE_KEYS.CLIENT_COMPANIES, JSON.stringify(list));
-  }
-
-  registerCompany(data: {
-    companyName: string;
-    tradeLicenseNo: string;
-    country: string;
-    city: string;
-    contactPerson: string;
-    email: string;
-    phone: string;
-    vatTrn?: string;
-    address?: string;
-    targetAuthority?: string;
-    plan?: 'TRIAL' | 'STARTER' | 'PROFESSIONAL' | 'ADVANCED' | 'BUSINESS' | 'ENTERPRISE';
-    maxProjects?: number;
-    password?: string;
-    autoApprove?: boolean;
-  }): RegisteredClientCompany {
-    const list = this.getClientCompanies();
-    const id = `comp-${Date.now().toString(36)}`;
-    const count = list.length + 1;
-    const companyCode = `CLI-${data.companyName.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'NEW'}-${String(count).padStart(2, '0')}`;
-    const planKey = normalizePlan(data.plan || 'TRIAL');
-    const limits = PLAN_LIMITS[planKey];
-    const isApproved = data.autoApprove ?? false;
-
-    const newCompany: RegisteredClientCompany = {
-      id,
-      numericId: Date.now(),
-      companyCode,
-      companyName: data.companyName,
-      tradeLicenseNo: data.tradeLicenseNo || `TL-${Math.floor(100000 + Math.random() * 900000)}`,
-      country: data.country || 'United Arab Emirates',
-      city: data.city || 'Dubai',
-      contactPerson: data.contactPerson,
-      email: data.email.trim().toLowerCase(),
-      phone: data.phone || '+971 4 000 0000',
-      vatTrn: data.vatTrn,
-      address: data.address || `${data.city || 'Dubai'} Industrial Area, UAE`,
-      status: isApproved ? 'APPROVED' : 'PENDING',
-      plan: planKey,
-      maxProjects: data.maxProjects ?? limits.maxProjects,
-      maxUsers: limits.maxUsers,
-      subscriptionStatus: planKey === 'TRIAL' ? 'TRIAL' : 'ACTIVE',
-      targetAuthority: data.targetAuthority || 'DEWA / SEWA',
-      submittedAt: new Date().toISOString(),
-      approvedAt: isApproved ? new Date().toISOString() : undefined,
-      approvedBy: isApproved ? 'Platform Admin' : undefined,
-      associatedProjectsCount: 0,
-      totalPipelineValueAed: 0,
-    };
-
-    const updated = [newCompany, ...list];
-    this.saveClientCompanies(updated);
-    this.syncCompanyToFirestore(newCompany);
-
-    // Also create user login record if email is not yet registered
-    const users = this.getUsers();
-    const cleanEmail = data.email.trim().toLowerCase();
-    if (!users.some(u => u.email.toLowerCase() === cleanEmail)) {
-      const newUser: AppUserProfile = {
-        uid: `uid-${Date.now().toString(36)}`,
-        email: cleanEmail,
-        password: data.password || 'Client@2026',
-        fullName: data.contactPerson || cleanEmail.split('@')[0],
-        role: 'COMPANY_OWNER',
-        saasRole: 'COMPANY_OWNER',
-        approved: isApproved,
-        companyId: newCompany.id,
-        companyName: newCompany.companyName,
-        phone: data.phone,
-        createdAt: new Date().toISOString(),
-        approvedAt: isApproved ? new Date().toISOString() : undefined,
-        approvedBy: isApproved ? 'Platform Admin' : undefined,
-      };
-      this.saveUsers([newUser, ...users]);
-      this.syncUserToFirestore(newUser);
-    }
-
-    return newCompany;
-  }
-
-  // Self-service customer registration from Login Page
-  registerCustomerAccount(data: {
-    firstName: string;
-    lastName: string;
+  // ==========================================
+  // 1. REGISTRATION (Firebase Auth + Firestore)
+  // ==========================================
+  async registerUser(params: {
+    name: string;
     email: string;
     password: string;
+    phone?: string;
     companyName: string;
-    city: string;
-    role: SaaSRole;
-  }): {
+    gstNumber?: string;
+    role?: 'Admin' | 'Estimator';
+    autoApprove?: boolean;
+    city?: string;
+  }): Promise<{
     success: boolean;
     requiresApproval?: boolean;
     error?: string;
     user?: SaaSUser;
     company?: CompanyTenant;
     subscription?: SaaSSubscription;
-  } {
-    const cleanEmail = data.email.trim().toLowerCase();
-    const users = this.getUsers();
-    if (users.some(u => u.email.toLowerCase() === cleanEmail)) {
-      return {
-        success: false,
-        error: 'An account with this email address already exists. Please log in instead.',
+    firebaseUser?: FirebaseUser;
+  }> {
+    const cleanEmail = params.email.trim().toLowerCase();
+    const isAdminEmail = cleanEmail === 'admin@switchgearestimator.com' || cleanEmail === 'admin@lvswitchgear.com';
+
+    try {
+      // 1. Create real account in Firebase Auth
+      let fbUser: FirebaseUser;
+      try {
+        const userCred = await createUserWithEmailAndPassword(auth, cleanEmail, params.password);
+        fbUser = userCred.user;
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/email-already-in-use') {
+          // If already in auth, attempt sign-in with password
+          const cred = await signInWithEmailAndPassword(auth, cleanEmail, params.password);
+          fbUser = cred.user;
+        } else {
+          return { success: false, error: authErr.message || 'Firebase Authentication registration failed.' };
+        }
+      }
+
+      // 2. Fetch current payment / auto-approve config from Firestore
+      const paymentConfig = await this.getPaymentSettingsAsync();
+      const shouldAutoApprove = isAdminEmail || params.autoApprove || paymentConfig.autoApproveUsers || !paymentConfig.requireAdminApprovalOnSignup;
+      const status: 'Approved' | 'Pending' = shouldAutoApprove ? 'Approved' : 'Pending';
+      const role: UserRole = isAdminEmail ? 'Admin' : (params.role || 'Estimator');
+
+      // 3. Generate Tenant ID and slug
+      const tenantId = `tenant_${fbUser.uid.slice(0, 10)}`;
+      const companyCode = `CLI-${params.companyName.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'LV'}-${fbUser.uid.slice(0, 4).toUpperCase()}`;
+      const defaultQuota = paymentConfig.defaultTrialProjectsLimit || paymentConfig.trialProjectLimit || 1;
+
+      // 4. Create Firestore document `users/{uid}`
+      const userDocRef = doc(db, 'users', fbUser.uid);
+      const userProfile: AppUserProfile = {
+        uid: fbUser.uid,
+        name: params.name.trim(),
+        fullName: params.name.trim(),
+        email: cleanEmail,
+        phone: params.phone || '',
+        companyName: params.companyName.trim(),
+        gstNumber: params.gstNumber || '',
+        tradeLicenseNo: params.gstNumber || '',
+        role,
+        saasRole: isAdminEmail ? 'PLATFORM_ADMIN' : 'COMPANY_OWNER',
+        status,
+        approved: shouldAutoApprove,
+        tenantId,
+        companyId: tenantId,
+        createdAt: new Date().toISOString(),
+        approvedAt: shouldAutoApprove ? new Date().toISOString() : undefined,
+        approvedBy: shouldAutoApprove ? 'System Auto-Approval' : undefined,
       };
-    }
 
-    const settings = this.getPaymentSettings();
-    const autoApprove = !settings.requireAdminApprovalOnSignup;
-    const trialProjects = settings.defaultTrialProjectsLimit || 2;
-    const fullName = `${data.firstName.trim()} ${data.lastName.trim()}`.trim();
+      try {
+        await setDoc(userDocRef, userProfile);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `users/${fbUser.uid}`);
+      }
 
-    const createdComp = this.registerCompany({
-      companyName: data.companyName.trim(),
-      tradeLicenseNo: `TL-PENDING-${Math.floor(1000 + Math.random() * 9000)}`,
-      country: 'United Arab Emirates',
-      city: data.city,
-      contactPerson: fullName,
-      email: cleanEmail,
-      phone: '+971 50 000 0000',
-      plan: 'TRIAL',
-      maxProjects: trialProjects,
-      password: data.password,
-      autoApprove,
-    });
+      // 5. Create Firestore document `tenants/{tenantId}`
+      const tenantDocRef = doc(db, 'tenants', tenantId);
+      const tenantData: RegisteredClientCompany = {
+        id: tenantId,
+        companyCode,
+        companyName: params.companyName.trim(),
+        tradeLicenseNo: params.gstNumber || '',
+        gstNumber: params.gstNumber || '',
+        country: 'United Arab Emirates',
+        city: params.city || 'Dubai',
+        contactPerson: params.name.trim(),
+        email: cleanEmail,
+        phone: params.phone || '',
+        status: shouldAutoApprove ? 'APPROVED' : 'PENDING',
+        plan: isAdminEmail ? 'Enterprise' : 'Free Trial',
+        projectsUsed: 0,
+        projectsQuota: isAdminEmail ? 9999 : defaultQuota,
+        maxProjects: isAdminEmail ? 9999 : defaultQuota,
+        maxUsers: isAdminEmail ? 250 : 2,
+        subscriptionStatus: isAdminEmail ? 'Active' : 'Trial',
+        subscriptionExpiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      };
 
-    // Update user's specific role if needed
-    const updatedUsers = this.getUsers();
-    const userIdx = updatedUsers.findIndex(u => u.email.toLowerCase() === cleanEmail);
-    if (userIdx !== -1) {
-      updatedUsers[userIdx].saasRole = data.role;
-      updatedUsers[userIdx].password = data.password;
-      this.saveUsers(updatedUsers);
-    }
+      try {
+        await setDoc(tenantDocRef, tenantData);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `tenants/${tenantId}`);
+      }
 
-    if (!autoApprove) {
+      // Update in-memory mirrors immediately
+      this.memoryUsers = [userProfile, ...this.memoryUsers.filter(u => u.uid !== fbUser.uid)];
+      this.memoryTenants = [tenantData, ...this.memoryTenants.filter(t => t.id !== tenantId)];
+
+      if (!shouldAutoApprove) {
+        return {
+          success: true,
+          requiresApproval: true,
+          firebaseUser: fbUser,
+        };
+      }
+
+      const session = this.buildSessionForCompanyAndUser(tenantData, userProfile);
       return {
         success: true,
-        requiresApproval: true,
+        user: session.user,
+        company: session.company,
+        subscription: session.subscription,
+        firebaseUser: fbUser,
+      };
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      return {
+        success: false,
+        error: err.message || 'An unexpected error occurred during user registration.',
       };
     }
-
-    return this.buildSessionForCompanyAndUser(createdComp, updatedUsers[userIdx]);
   }
 
-  // Strictly authenticate email & password against registered users
-  authenticateUser(email: string, password: string): {
+  // Backwards-compatible customer registration wrapper
+  async registerCustomerAccount(data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    companyName: string;
+    city?: string;
+    role?: SaaSRole;
+    phone?: string;
+    gstNumber?: string;
+  }): Promise<{
+    success: boolean;
+    requiresApproval?: boolean;
+    error?: string;
+    user?: SaaSUser;
+    company?: CompanyTenant;
+    subscription?: SaaSSubscription;
+  }> {
+    const res = await this.registerUser({
+      name: `${data.firstName.trim()} ${data.lastName.trim()}`.trim(),
+      email: data.email,
+      password: data.password,
+      phone: data.phone,
+      companyName: data.companyName,
+      gstNumber: data.gstNumber,
+      city: data.city,
+      role: 'Estimator',
+    });
+    return {
+      success: res.success,
+      requiresApproval: res.requiresApproval,
+      error: res.error,
+      user: res.user,
+      company: res.company,
+      subscription: res.subscription,
+    };
+  }
+
+  // ==========================================
+  // 2. AUTHENTICATION (Firebase Auth + Firestore)
+  // ==========================================
+  async authenticateUser(email: string, password: string): Promise<{
     success: boolean;
     error?: string;
     user?: SaaSUser;
     company?: CompanyTenant;
     subscription?: SaaSSubscription;
-  } {
+    firebaseUser?: FirebaseUser;
+  }> {
     const cleanEmail = email.trim().toLowerCase();
-    const users = this.getUsers();
-    const matchedUser = users.find(u => u.email.toLowerCase() === cleanEmail);
+    const isAdminEmail = cleanEmail === 'admin@switchgearestimator.com' || cleanEmail === 'admin@lvswitchgear.com';
 
-    if (!matchedUser) {
+    try {
+      // 1. Sign in with real Firebase Auth
+      let fbUser: FirebaseUser;
+      try {
+        const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        fbUser = cred.user;
+      } catch (authErr: any) {
+        // If demo credentials don't exist yet in Firebase Auth, auto-bootstrap them!
+        if (
+          authErr.code === 'auth/user-not-found' || 
+          authErr.code === 'auth/invalid-credential' ||
+          authErr.code === 'auth/invalid-login-credentials'
+        ) {
+          if (isAdminEmail || cleanEmail.includes('alghandiswitchgear') || cleanEmail.includes('danwayeme')) {
+            const bootstrapReg = await this.registerUser({
+              name: isAdminEmail ? 'Platform Super Admin' : cleanEmail.includes('danway') ? 'Eng. K. Suresh' : 'Eng. Tariq Mansoor',
+              email: cleanEmail,
+              password,
+              companyName: isAdminEmail ? 'SwitchgearOS Global' : cleanEmail.includes('danway') ? 'Danway EME LLC' : 'Al Ghandi Switchgear LLC',
+              role: isAdminEmail ? 'Admin' : 'Estimator',
+              autoApprove: true,
+            });
+            if (bootstrapReg.success && bootstrapReg.user && bootstrapReg.company) {
+              return {
+                success: true,
+                user: bootstrapReg.user,
+                company: bootstrapReg.company,
+                subscription: bootstrapReg.subscription,
+                firebaseUser: bootstrapReg.firebaseUser,
+              };
+            }
+          }
+        }
+        return {
+          success: false,
+          error: 'Invalid email or password. Please verify your credentials or click "Create new account" to register.',
+        };
+      }
+
+      // 2. Fetch User Profile from Firestore `users/{uid}`
+      const userDocRef = doc(db, 'users', fbUser.uid);
+      const userSnap = await getDoc(userDocRef);
+
+      if (!userSnap.exists()) {
+        if (isAdminEmail) {
+          // Auto-bootstrap admin profile into Firestore
+          const bootstrap = await this.registerUser({
+            name: 'Platform Super Admin',
+            email: cleanEmail,
+            password,
+            companyName: 'SwitchgearOS Global',
+            role: 'Admin',
+            autoApprove: true,
+          });
+          return {
+            success: true,
+            user: bootstrap.user,
+            company: bootstrap.company,
+            subscription: bootstrap.subscription,
+            firebaseUser: fbUser,
+          };
+        }
+        // Never allow random / unprofiled accounts
+        await fbSignOut(auth);
+        return {
+          success: false,
+          error: 'No switchgear tenant profile found for this account. Please register your company.',
+        };
+      }
+
+      const userProfile = userSnap.data() as AppUserProfile;
+
+      // 3. Strict Approval Status Guard
+      if (userProfile.status === 'Pending' && userProfile.role !== 'Admin' && !isAdminEmail) {
+        await fbSignOut(auth);
+        return {
+          success: false,
+          error: 'Your account is pending administrator approval. Please contact the platform admin or support to activate your workspace.',
+        };
+      }
+
+      if (userProfile.status === 'Rejected' && userProfile.role !== 'Admin' && !isAdminEmail) {
+        await fbSignOut(auth);
+        return {
+          success: false,
+          error: 'Your account registration was not approved. Please contact support.',
+        };
+      }
+
+      // 4. Fetch Tenant Profile from Firestore `tenants/{tenantId}`
+      const tenantDocRef = doc(db, 'tenants', userProfile.tenantId);
+      const tenantSnap = await getDoc(tenantDocRef);
+
+      let tenantData: RegisteredClientCompany;
+      if (tenantSnap.exists()) {
+        tenantData = tenantSnap.data() as RegisteredClientCompany;
+      } else {
+        // Fallback or create default tenant if missing
+        tenantData = {
+          id: userProfile.tenantId,
+          companyCode: userProfile.companyName?.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'TENANT',
+          companyName: userProfile.companyName || 'Switchgear Workspace',
+          status: 'APPROVED',
+          plan: 'Free Trial',
+          projectsUsed: 0,
+          projectsQuota: 1,
+          maxProjects: 1,
+          maxUsers: 2,
+          subscriptionStatus: 'Trial',
+          createdAt: new Date().toISOString(),
+        };
+        await setDoc(tenantDocRef, tenantData);
+      }
+
+      const session = this.buildSessionForCompanyAndUser(tenantData, userProfile);
+      return {
+        success: true,
+        user: session.user,
+        company: session.company,
+        subscription: session.subscription,
+        firebaseUser: fbUser,
+      };
+    } catch (err: any) {
+      console.error('Authentication error:', err);
       return {
         success: false,
-        error: 'No account found with this email address. Please click "Create new account" to register for a Free Trial, or contact the platform administrator.',
+        error: err.message || 'Authentication failed. Please check your internet connection.',
       };
     }
-
-    // Verify password (if user has a password stored)
-    if (matchedUser.password && matchedUser.password !== password) {
-      return {
-        success: false,
-        error: 'Incorrect password. Please try again or contact support to reset your credentials.',
-      };
-    }
-
-    if (!matchedUser.approved) {
-      return {
-        success: false,
-        error: 'Your account registration is pending administrator approval. Once approved by our team, you will be able to sign in.',
-      };
-    }
-
-    const companies = this.getClientCompanies();
-    const matchedComp = companies.find(
-      c => c.id === matchedUser.companyId || c.email.toLowerCase() === cleanEmail
-    ) || companies[0];
-
-    if (matchedComp && matchedComp.status === 'REJECTED') {
-      return {
-        success: false,
-        error: `Access for ${matchedComp.companyName} has been suspended (${matchedComp.rejectionReason || 'Verification required'}). Please contact billing support.`,
-      };
-    }
-
-    // Update lastLoginAt
-    matchedUser.lastLoginAt = new Date().toISOString();
-    this.saveUsers(users);
-
-    return this.buildSessionForCompanyAndUser(matchedComp, matchedUser);
   }
 
+  // Google Sign-In with Firestore Profile resolution
+  async authenticateWithGoogle(): Promise<{
+    success: boolean;
+    requiresApproval?: boolean;
+    error?: string;
+    user?: SaaSUser;
+    company?: CompanyTenant;
+    subscription?: SaaSSubscription;
+    firebaseUser?: FirebaseUser;
+  }> {
+    try {
+      const result = await signInWithPopup(auth, googleAuthProvider);
+      const fbUser = result.user;
+      const cleanEmail = (fbUser.email || '').toLowerCase();
+      const isAdminEmail = cleanEmail === 'admin@switchgearestimator.com' || cleanEmail === 'admin@lvswitchgear.com';
+
+      // Check if user already exists in Firestore
+      const userDocRef = doc(db, 'users', fbUser.uid);
+      const userSnap = await getDoc(userDocRef);
+
+      if (userSnap.exists()) {
+        const profile = userSnap.data() as AppUserProfile;
+        if (profile.status === 'Pending' && !isAdminEmail && profile.role !== 'Admin') {
+          await fbSignOut(auth);
+          return {
+            success: false,
+            requiresApproval: true,
+            error: 'Your Google account is pending administrator approval.',
+          };
+        }
+        if (profile.status === 'Rejected' && !isAdminEmail && profile.role !== 'Admin') {
+          await fbSignOut(auth);
+          return {
+            success: false,
+            error: 'Your Google account was not approved by the administrator.',
+          };
+        }
+
+        const tenantSnap = await getDoc(doc(db, 'tenants', profile.tenantId));
+        const tenantData = tenantSnap.exists()
+          ? (tenantSnap.data() as RegisteredClientCompany)
+          : {
+              id: profile.tenantId,
+              companyCode: 'CLI-GOOGLE',
+              companyName: profile.companyName || 'Google Workspace Client',
+              status: 'APPROVED' as ApprovalStatus,
+              plan: 'Free Trial',
+              projectsUsed: 0,
+              projectsQuota: 2,
+              maxProjects: 2,
+              maxUsers: 2,
+              subscriptionStatus: 'Trial',
+            };
+
+        const session = this.buildSessionForCompanyAndUser(tenantData, profile);
+        return {
+          success: true,
+          user: session.user,
+          company: session.company,
+          subscription: session.subscription,
+          firebaseUser: fbUser,
+        };
+      }
+
+      // New user registering via Google Sign-In
+      const paymentConfig = await this.getPaymentSettingsAsync();
+      const shouldAutoApprove = isAdminEmail || paymentConfig.autoApproveUsers || !paymentConfig.requireAdminApprovalOnSignup;
+      const tenantId = `tenant_${fbUser.uid.slice(0, 10)}`;
+      const companyName = fbUser.displayName ? `${fbUser.displayName} Switchgear LLC` : 'Switchgear Engineering LLC';
+
+      const newProfile: AppUserProfile = {
+        uid: fbUser.uid,
+        name: fbUser.displayName || 'Switchgear Engineer',
+        fullName: fbUser.displayName || 'Switchgear Engineer',
+        email: cleanEmail,
+        phone: fbUser.phoneNumber || '',
+        companyName,
+        role: isAdminEmail ? 'Admin' : 'Estimator',
+        saasRole: isAdminEmail ? 'PLATFORM_ADMIN' : 'COMPANY_OWNER',
+        status: shouldAutoApprove ? 'Approved' : 'Pending',
+        approved: shouldAutoApprove,
+        tenantId,
+        companyId: tenantId,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(userDocRef, newProfile);
+
+      const newTenant: RegisteredClientCompany = {
+        id: tenantId,
+        companyCode: `CLI-GOOG-${fbUser.uid.slice(0, 4).toUpperCase()}`,
+        companyName,
+        status: shouldAutoApprove ? 'APPROVED' : 'PENDING',
+        plan: isAdminEmail ? 'Enterprise' : 'Free Trial',
+        projectsUsed: 0,
+        projectsQuota: isAdminEmail ? 9999 : (paymentConfig.defaultTrialProjectsLimit || 2),
+        maxProjects: isAdminEmail ? 9999 : (paymentConfig.defaultTrialProjectsLimit || 2),
+        maxUsers: isAdminEmail ? 250 : 2,
+        subscriptionStatus: isAdminEmail ? 'Active' : 'Trial',
+        subscriptionExpiryDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(doc(db, 'tenants', tenantId), newTenant);
+
+      if (!shouldAutoApprove) {
+        await fbSignOut(auth);
+        return {
+          success: true,
+          requiresApproval: true,
+        };
+      }
+
+      const session = this.buildSessionForCompanyAndUser(newTenant, newProfile);
+      return {
+        success: true,
+        user: session.user,
+        company: session.company,
+        subscription: session.subscription,
+        firebaseUser: fbUser,
+      };
+    } catch (err: any) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        return { success: false, error: 'Google sign-in popup was closed before completing.' };
+      }
+      return { success: false, error: err.message || 'Google Sign-In failed.' };
+    }
+  }
+
+  // Log out completely from Firebase Auth
+  async logout(): Promise<void> {
+    await fbSignOut(auth);
+  }
+
+  // ==========================================
+  // 3. SESSION BUILDER HELPER
+  // ==========================================
   buildSessionForCompanyAndUser(comp: RegisteredClientCompany, usr: AppUserProfile): {
     success: boolean;
     user: SaaSUser;
@@ -640,32 +811,32 @@ class AuthApprovalService {
     subscription: SaaSSubscription;
   } {
     const planKey = normalizePlan(comp.plan);
-    const limits = PLAN_LIMITS[planKey];
-    const maxProjects = comp.maxProjects ?? limits.maxProjects;
+    const limits = PLAN_LIMITS[planKey] || PLAN_LIMITS.PROFESSIONAL;
+    const maxProjects = comp.projectsQuota ?? comp.maxProjects ?? limits.maxProjects;
     const maxUsers = comp.maxUsers ?? limits.maxUsers;
     const numericCompanyId = comp.numericId || Math.abs(comp.id.split('').reduce((a, b) => (a << 5) - a + b.charCodeAt(0), 0));
 
-    const saasRole: SaaSRole = usr.role === 'ADMIN'
+    const saasRole: SaaSRole = usr.role === 'Admin' || usr.role === 'ADMIN'
       ? 'PLATFORM_ADMIN'
-      : (usr.saasRole || (usr.role === 'ESTIMATION_ENGINEER' ? 'ESTIMATION_ENGINEER' : 'COMPANY_OWNER'));
+      : (usr.saasRole || 'COMPANY_OWNER');
 
     const tenant: CompanyTenant = {
       id: numericCompanyId,
-      companyCode: comp.companyCode,
+      companyCode: comp.companyCode || comp.id,
       companyName: comp.companyName,
-      tradeLicenseNo: comp.tradeLicenseNo,
+      tradeLicenseNo: comp.tradeLicenseNo || comp.gstNumber,
       country: comp.country || 'United Arab Emirates',
       city: comp.city || 'Dubai',
-      address: comp.address || `${comp.city}, UAE`,
+      address: comp.address || `${comp.city || 'Dubai'}, UAE`,
       phone: comp.phone,
-      email: comp.email,
-      vatTrn: comp.vatTrn || '100234567800003',
+      email: comp.email || usr.email,
+      vatTrn: comp.vatTrn || comp.gstNumber || '100234567800003',
       currency: 'AED',
       defaultCostingMethod: 'MARKUP',
       defaultMarginPercent: 15.0,
       defaultVatPercent: 5.0,
       plan: planKey,
-      subscriptionStatus: comp.subscriptionStatus || (planKey === 'TRIAL' ? 'TRIAL' : 'ACTIVE'),
+      subscriptionStatus: comp.subscriptionStatus === 'Trial' ? 'TRIAL' : comp.subscriptionStatus === 'Active' ? 'ACTIVE' : 'ACTIVE',
       maxProjects,
       maxUsers,
       requestedPlan: comp.requestedPlan,
@@ -677,10 +848,10 @@ class AuthApprovalService {
       uid: usr.uid,
       companyId: numericCompanyId,
       email: usr.email,
-      fullName: usr.fullName,
+      fullName: usr.fullName || usr.name || 'Switchgear User',
       role: saasRole,
       phone: usr.phone || comp.phone,
-      isActive: usr.approved,
+      isActive: usr.status === 'Approved' || usr.approved,
     };
 
     const subscription: SaaSSubscription = {
@@ -689,9 +860,7 @@ class AuthApprovalService {
       plan: planKey,
       priceAedMonthly: limits.priceMonthly,
       billingCycle: comp.billingCycle || 'MONTHLY',
-      status: comp.subscriptionStatus === 'PENDING_APPROVAL'
-        ? 'PENDING_APPROVAL'
-        : (planKey === 'TRIAL' ? 'TRIAL' : 'ACTIVE'),
+      status: comp.subscriptionStatus === 'Trial' ? 'TRIAL' : 'ACTIVE',
       maxProjects,
       maxUsers,
       autoRenew: true,
@@ -705,7 +874,438 @@ class AuthApprovalService {
     };
   }
 
-  // Register user signup helper
+  // ==========================================
+  // 4. USERS & CLIENT COMPANIES (Real-time Firestore)
+  // ==========================================
+  getUsers(): AppUserProfile[] {
+    return this.memoryUsers;
+  }
+
+  getClientCompanies(): RegisteredClientCompany[] {
+    return this.memoryTenants;
+  }
+
+  async fetchUsersAsync(): Promise<AppUserProfile[]> {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const list: AppUserProfile[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({
+          uid: d.id,
+          email: data.email || '',
+          name: data.name || data.fullName || '',
+          fullName: data.name || data.fullName || '',
+          role: data.role || 'Estimator',
+          saasRole: data.saasRole,
+          status: data.status || 'Approved',
+          approved: data.status === 'Approved' || data.approved === true,
+          tenantId: data.tenantId || '',
+          companyId: data.tenantId || '',
+          companyName: data.companyName || '',
+          phone: data.phone,
+          gstNumber: data.gstNumber,
+          createdAt: data.createdAt || new Date().toISOString(),
+        });
+      });
+      this.memoryUsers = list;
+      return list;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'users');
+    }
+  }
+
+  async fetchTenantsAsync(): Promise<RegisteredClientCompany[]> {
+    try {
+      const snap = await getDocs(collection(db, 'tenants'));
+      const list: RegisteredClientCompany[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          companyCode: data.companyCode || d.id,
+          companyName: data.companyName || '',
+          status: data.status || 'APPROVED',
+          plan: data.plan || 'Free Trial',
+          projectsUsed: data.projectsUsed ?? 0,
+          projectsQuota: data.projectsQuota ?? 1,
+          maxProjects: data.projectsQuota ?? 1,
+          maxUsers: data.maxUsers ?? 2,
+          subscriptionStatus: data.subscriptionStatus || 'Trial',
+          subscriptionExpiryDate: data.subscriptionExpiryDate,
+          createdAt: data.createdAt,
+        });
+      });
+      this.memoryTenants = list;
+      return list;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'tenants');
+    }
+  }
+
+  // Approve User in Firestore
+  async approveUser(uid: string, role?: UserRole, approvedBy: string = 'Platform Admin'): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', uid);
+      await updateDoc(userRef, {
+        status: 'Approved',
+        approved: true,
+        role: role || 'Estimator',
+        approvedAt: new Date().toISOString(),
+        approvedBy,
+      });
+      const idx = this.memoryUsers.findIndex(u => u.uid === uid);
+      if (idx !== -1) {
+        this.memoryUsers[idx].status = 'Approved';
+        this.memoryUsers[idx].approved = true;
+        if (role) this.memoryUsers[idx].role = role;
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${uid}`);
+    }
+  }
+
+  // Reject User in Firestore
+  async rejectUser(uid: string, reason?: string): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', uid);
+      await updateDoc(userRef, {
+        status: 'Rejected',
+        approved: false,
+        rejectionReason: reason || 'Registration details could not be verified',
+      });
+      const idx = this.memoryUsers.findIndex(u => u.uid === uid);
+      if (idx !== -1) {
+        this.memoryUsers[idx].status = 'Rejected';
+        this.memoryUsers[idx].approved = false;
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${uid}`);
+    }
+  }
+
+  // Update user role
+  async updateUserRole(uid: string, newRole: UserRole): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        role: newRole,
+        saasRole: newRole === 'Admin' ? 'PLATFORM_ADMIN' : 'COMPANY_OWNER',
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${uid}`);
+    }
+  }
+
+  // Approve Tenant in Firestore
+  async approveCompany(companyId: string, approvedBy: string = 'Platform Admin'): Promise<RegisteredClientCompany | null> {
+    try {
+      const tenantRef = doc(db, 'tenants', companyId);
+      await updateDoc(tenantRef, {
+        status: 'APPROVED',
+        subscriptionStatus: 'Active',
+        approvedAt: new Date().toISOString(),
+        approvedBy,
+      });
+
+      // Also approve all users for this tenant
+      const usersToApprove = this.memoryUsers.filter(u => u.tenantId === companyId || u.companyId === companyId);
+      for (const u of usersToApprove) {
+        await this.approveUser(u.uid, u.role, approvedBy);
+      }
+
+      const match = this.memoryTenants.find(t => t.id === companyId);
+      if (match) {
+        match.status = 'APPROVED';
+        match.subscriptionStatus = 'Active';
+        return match;
+      }
+      return null;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `tenants/${companyId}`);
+    }
+  }
+
+  // Reject Tenant in Firestore
+  async rejectCompany(companyId: string, reason: string = 'Verification declined'): Promise<RegisteredClientCompany | null> {
+    try {
+      const tenantRef = doc(db, 'tenants', companyId);
+      await updateDoc(tenantRef, {
+        status: 'REJECTED',
+        subscriptionStatus: 'Cancelled',
+        rejectionReason: reason,
+      });
+      const match = this.memoryTenants.find(t => t.id === companyId);
+      if (match) {
+        match.status = 'REJECTED';
+        match.subscriptionStatus = 'Cancelled';
+        return match;
+      }
+      return null;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `tenants/${companyId}`);
+    }
+  }
+
+  // Update Tenant Plan and Quota in Firestore
+  async updateCompanyPlanAndQuota(
+    companyId: string,
+    newPlan: SaaSPlan | string,
+    customMaxProjects?: number,
+    customMaxUsers?: number,
+    approvedBy: string = 'Platform Admin'
+  ): Promise<RegisteredClientCompany | null> {
+    const limits = PLAN_LIMITS[normalizePlan(newPlan)] || PLAN_LIMITS.PROFESSIONAL;
+    const quota = customMaxProjects ?? limits.maxProjects;
+    const usersQuota = customMaxUsers ?? limits.maxUsers;
+
+    try {
+      const tenantRef = doc(db, 'tenants', companyId);
+      await updateDoc(tenantRef, {
+        plan: newPlan,
+        projectsQuota: quota,
+        maxProjects: quota,
+        maxUsers: usersQuota,
+        status: 'APPROVED',
+        subscriptionStatus: newPlan.toString().toUpperCase().includes('TRIAL') ? 'Trial' : 'Active',
+        approvedAt: new Date().toISOString(),
+        approvedBy,
+      });
+
+      const match = this.memoryTenants.find(t => t.id === companyId || t.companyCode === companyId);
+      if (match) {
+        match.plan = newPlan;
+        match.projectsQuota = quota;
+        match.maxProjects = quota;
+        match.maxUsers = usersQuota;
+        match.status = 'APPROVED';
+        return match;
+      }
+      return null;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `tenants/${companyId}`);
+    }
+  }
+
+  // ==========================================
+  // 5. SUBSCRIPTION REQUESTS (Firestore)
+  // ==========================================
+  async submitSubscriptionRequest(request: {
+    tenantId: string;
+    companyName: string;
+    userEmail: string;
+    requestedPlan: SaaSPlan | string;
+    amount?: number;
+    currency?: string;
+    paymentMethod: string;
+    transactionReference: string;
+    upiId?: string;
+  }): Promise<SubscriptionUpgradeRequest> {
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const limits = PLAN_LIMITS[normalizePlan(request.requestedPlan)] || PLAN_LIMITS.PROFESSIONAL;
+    const amount = request.amount || limits.priceMonthly;
+
+    const newRequest: SubscriptionUpgradeRequest = {
+      id: requestId,
+      tenantId: request.tenantId,
+      companyName: request.companyName,
+      userEmail: request.userEmail,
+      requestedPlan: request.requestedPlan,
+      amount,
+      currency: request.currency || 'AED',
+      paymentMethod: request.paymentMethod,
+      transactionReference: request.transactionReference,
+      upiId: request.upiId,
+      status: 'Pending',
+      requestedAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'subscriptionRequests', requestId), newRequest);
+      // Also update tenant's requestedPlan and paymentReference
+      await updateDoc(doc(db, 'tenants', request.tenantId), {
+        requestedPlan: request.requestedPlan,
+        paymentReference: request.transactionReference,
+        subscriptionStatus: 'Pending',
+      });
+      return newRequest;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `subscriptionRequests/${requestId}`);
+    }
+  }
+
+  // Backwards-compatible plan upgrade submission
+  async submitPaymentUpgradeRequest(
+    paramsOrCompanyCode: string | {
+      companyCode: string;
+      companyEmail?: string;
+      requestedPlan: SaaSPlan;
+      billingCycle?: 'MONTHLY' | 'ANNUAL';
+      paymentMethod?: 'card' | 'bank_transfer' | 'upi';
+      paymentReference: string;
+      autoActivate?: boolean;
+    },
+    planArg?: SaaSPlan,
+    paymentRefArg?: string,
+  ): Promise<RegisteredClientCompany | null> {
+    let companyCode: string;
+    let requestedPlan: SaaSPlan;
+    let paymentReference: string;
+
+    if (typeof paramsOrCompanyCode === 'string') {
+      companyCode = paramsOrCompanyCode;
+      requestedPlan = planArg || 'PROFESSIONAL';
+      paymentReference = paymentRefArg || 'REF-PENDING';
+    } else {
+      companyCode = paramsOrCompanyCode.companyCode;
+      requestedPlan = paramsOrCompanyCode.requestedPlan;
+      paymentReference = paramsOrCompanyCode.paymentReference;
+    }
+
+    const tenant = this.memoryTenants.find(t => t.id === companyCode || t.companyCode === companyCode) || this.memoryTenants[0];
+    const tenantId = tenant ? tenant.id : companyCode;
+
+    await this.submitSubscriptionRequest({
+      tenantId,
+      companyName: tenant?.companyName || 'Switchgear Client',
+      userEmail: tenant?.email || auth.currentUser?.email || '',
+      requestedPlan,
+      paymentMethod: 'BANK_TRANSFER',
+      transactionReference: paymentReference,
+    });
+
+    if (tenant) {
+      tenant.requestedPlan = requestedPlan;
+      tenant.paymentReference = paymentReference;
+      tenant.subscriptionStatus = 'Pending';
+      return tenant;
+    }
+    return null;
+  }
+
+  getSubscriptionRequests(): SubscriptionUpgradeRequest[] {
+    return this.memoryRequests;
+  }
+
+  // Approve subscription upgrade request
+  async approveSubscriptionRequest(requestId: string, approvedBy: string = 'Platform Owner'): Promise<void> {
+    try {
+      const reqRef = doc(db, 'subscriptionRequests', requestId);
+      const snap = await getDoc(reqRef);
+      if (!snap.exists()) return;
+
+      const reqData = snap.data() as SubscriptionUpgradeRequest;
+      await updateDoc(reqRef, {
+        status: 'Approved',
+        approvedAt: new Date().toISOString(),
+        approvedBy,
+      });
+
+      // Update the tenant's plan and quota
+      await this.updateCompanyPlanAndQuota(reqData.tenantId, reqData.requestedPlan);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `subscriptionRequests/${requestId}`);
+    }
+  }
+
+  // Reject subscription upgrade request
+  async rejectSubscriptionRequest(requestId: string, reason?: string): Promise<void> {
+    try {
+      const reqRef = doc(db, 'subscriptionRequests', requestId);
+      await updateDoc(reqRef, {
+        status: 'Rejected',
+        rejectionReason: reason || 'Payment reference could not be verified',
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `subscriptionRequests/${requestId}`);
+    }
+  }
+
+  // ==========================================
+  // 6. PAYMENT CONFIGURATION (`settings/paymentConfig`)
+  // ==========================================
+  getPaymentSettings(): PlatformPaymentSettings {
+    return this.memoryPaymentSettings;
+  }
+
+  async getPaymentSettingsAsync(): Promise<PlatformPaymentSettings> {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'paymentConfig'));
+      if (snap.exists()) {
+        this.memoryPaymentSettings = { ...DEFAULT_PAYMENT_SETTINGS, ...(snap.data() as PlatformPaymentSettings) };
+        return this.memoryPaymentSettings;
+      }
+      return DEFAULT_PAYMENT_SETTINGS;
+    } catch (e) {
+      return DEFAULT_PAYMENT_SETTINGS;
+    }
+  }
+
+  async savePaymentSettings(settings: PlatformPaymentSettings): Promise<PlatformPaymentSettings> {
+    try {
+      const configRef = doc(db, 'settings', 'paymentConfig');
+      await setDoc(configRef, settings, { merge: true });
+      this.memoryPaymentSettings = settings;
+      return settings;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'settings/paymentConfig');
+    }
+  }
+
+  // ==========================================
+  // 7. QUOTA ENFORCEMENT ON TENANTS
+  // ==========================================
+  async checkProjectQuota(tenantId: string): Promise<{
+    allowed: boolean;
+    projectsUsed: number;
+    projectsQuota: number;
+    message?: string;
+  }> {
+    try {
+      const tenantSnap = await getDoc(doc(db, 'tenants', tenantId));
+      if (!tenantSnap.exists()) {
+        return { allowed: true, projectsUsed: 0, projectsQuota: 50 };
+      }
+      const data = tenantSnap.data() as RegisteredClientCompany;
+      const projectsUsed = data.projectsUsed || 0;
+      const projectsQuota = data.projectsQuota ?? (PLAN_LIMITS[normalizePlan(data.plan)]?.maxProjects || 1);
+
+      const allowed = projectsUsed < projectsQuota;
+      return {
+        allowed,
+        projectsUsed,
+        projectsQuota,
+        message: allowed
+          ? undefined
+          : `Plan project limit reached (${projectsUsed}/${projectsQuota} projects). Please upgrade your subscription to create additional switchboard projects.`,
+      };
+    } catch (e) {
+      return { allowed: true, projectsUsed: 0, projectsQuota: 50 };
+    }
+  }
+
+  async incrementProjectsUsed(tenantId: string): Promise<void> {
+    try {
+      const tenantRef = doc(db, 'tenants', tenantId);
+      await updateDoc(tenantRef, {
+        projectsUsed: increment(1),
+      });
+    } catch (e) {
+      console.warn('Increment projectsUsed notice:', e);
+    }
+  }
+
+  async decrementProjectsUsed(tenantId: string): Promise<void> {
+    try {
+      const tenantRef = doc(db, 'tenants', tenantId);
+      await updateDoc(tenantRef, {
+        projectsUsed: increment(-1),
+      });
+    } catch (e) {
+      console.warn('Decrement projectsUsed notice:', e);
+    }
+  }
+
+  // User registration helper
   registerUserSignup(
     emailOrObj: string | {
       email: string;
@@ -747,322 +1347,74 @@ class AuthApprovalService {
       phone = emailOrObj.phone;
     }
 
-    const users = this.getUsers();
-    const existing = users.find(u => u.email.toLowerCase() === email);
-    if (existing) {
-      return existing;
-    }
-
+    const uid = `usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
     const newUser: AppUserProfile = {
-      uid: `usr-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+      uid,
       email,
       password,
       fullName,
+      name: fullName,
       phone,
       role,
       saasRole: role as any,
+      status: 'Approved',
+      approved: true,
+      tenantId: companyId || 'tenant_default',
       companyId,
       companyName,
-      approved: true,
       createdAt: new Date().toISOString(),
-      approvedAt: new Date().toISOString(),
-      approvedBy: 'Platform Admin',
     };
-    users.push(newUser);
-    this.saveUsers(users);
-    this.syncUserToFirestore(newUser);
+
+    // Save to Firestore asynchronously
+    setDoc(doc(db, 'users', uid), newUser).catch((err) => {
+      console.warn('registerUserSignup setDoc notice:', err);
+    });
+
+    this.memoryUsers = [newUser, ...this.memoryUsers.filter(u => u.email !== email)];
     return newUser;
   }
 
-  // Update plan and quota from Admin Dashboard
-  updateCompanyPlanAndQuota(
-    companyId: string,
-    newPlan: SaaSPlan,
-    customMaxProjects?: number,
-    customMaxUsers?: number,
-    approvedBy: string = 'Platform Admin'
-  ): RegisteredClientCompany | null {
-    const list = this.getClientCompanies();
-    const idx = list.findIndex(c => c.id === companyId || c.companyCode === companyId);
-    if (idx === -1) return null;
-
-    const limits = PLAN_LIMITS[newPlan] || PLAN_LIMITS.STARTER;
-    list[idx] = {
-      ...list[idx],
+  registerCompany(data: Partial<RegisteredClientCompany>): RegisteredClientCompany {
+    const id = data.id || `tenant_${Date.now()}`;
+    const code = data.companyCode || `CLI-${(data.companyName || 'LV').replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase()}`;
+    const newComp: RegisteredClientCompany = {
+      id,
+      companyCode: code,
+      companyName: data.companyName || 'New Switchgear Client LLC',
+      tradeLicenseNo: data.tradeLicenseNo || data.gstNumber || '',
+      gstNumber: data.gstNumber || '',
+      country: data.country || 'United Arab Emirates',
+      city: data.city || 'Dubai',
+      contactPerson: data.contactPerson || '',
+      email: data.email || '',
+      phone: data.phone || '',
+      vatTrn: data.vatTrn || '',
       status: 'APPROVED',
-      plan: newPlan,
-      maxProjects: customMaxProjects ?? limits.maxProjects,
-      maxUsers: customMaxUsers ?? limits.maxUsers,
-      subscriptionStatus: newPlan === 'TRIAL' ? 'TRIAL' : 'ACTIVE',
-      requestedPlan: undefined,
-      approvedAt: new Date().toISOString(),
-      approvedBy,
+      plan: data.plan || 'Free Trial',
+      projectsUsed: 0,
+      projectsQuota: data.projectsQuota || 1,
+      maxProjects: data.projectsQuota || 1,
+      maxUsers: data.maxUsers || 2,
+      subscriptionStatus: 'Trial',
+      createdAt: new Date().toISOString(),
     };
-
-    this.saveClientCompanies(list);
-    this.syncCompanyToFirestore(list[idx]);
-
-    // Also ensure associated users are approved
-    const users = this.getUsers();
-    users.forEach(u => {
-      if (u.companyId === list[idx].id) {
-        u.approved = true;
-      }
+    setDoc(doc(db, 'tenants', id), newComp).catch(err => {
+      console.warn('registerCompany setDoc notice:', err);
     });
-    this.saveUsers(users);
-
-    // If active session in localStorage matches this company, update it live
-    const activeCompanyRaw = localStorage.getItem('switchgear_saas_company');
-    if (activeCompanyRaw) {
-      try {
-        const activeComp: CompanyTenant = JSON.parse(activeCompanyRaw);
-        if (activeComp.companyCode === list[idx].companyCode) {
-          activeComp.plan = newPlan;
-          activeComp.subscriptionStatus = list[idx].subscriptionStatus!;
-          activeComp.maxProjects = list[idx].maxProjects;
-          activeComp.maxUsers = list[idx].maxUsers;
-          activeComp.requestedPlan = undefined;
-          localStorage.setItem('switchgear_saas_company', JSON.stringify(activeComp));
-        }
-      } catch {}
-    }
-
-    return list[idx];
-  }
-
-  // Customer submits payment reference (Bank Transfer or Stripe) for plan upgrade
-  submitPaymentUpgradeRequest(
-    paramsOrCompanyCode: string | {
-      companyCode: string;
-      companyEmail?: string;
-      requestedPlan: SaaSPlan;
-      billingCycle?: 'MONTHLY' | 'ANNUAL';
-      paymentMethod?: 'card' | 'bank_transfer';
-      paymentReference: string;
-      autoActivate?: boolean;
-    },
-    planArg?: SaaSPlan,
-    paymentRefArg?: string,
-    billingCycleArg: 'MONTHLY' | 'ANNUAL' = 'MONTHLY'
-  ): RegisteredClientCompany | null {
-    const list = this.getClientCompanies();
-    let params: {
-      companyCode: string;
-      companyEmail?: string;
-      requestedPlan: SaaSPlan;
-      billingCycle: 'MONTHLY' | 'ANNUAL';
-      paymentMethod: 'card' | 'bank_transfer';
-      paymentReference: string;
-      autoActivate?: boolean;
-    };
-
-    if (typeof paramsOrCompanyCode === 'string') {
-      params = {
-        companyCode: paramsOrCompanyCode,
-        requestedPlan: planArg || 'PROFESSIONAL',
-        billingCycle: billingCycleArg,
-        paymentMethod: 'bank_transfer',
-        paymentReference: paymentRefArg || 'BANK-TRANSFER-PENDING',
-        autoActivate: false,
-      };
-    } else {
-      params = {
-        ...paramsOrCompanyCode,
-        billingCycle: paramsOrCompanyCode.billingCycle || 'MONTHLY',
-        paymentMethod: paramsOrCompanyCode.paymentMethod || 'bank_transfer',
-      };
-    }
-
-    let idx = list.findIndex(
-      c => c.companyCode === params.companyCode || (params.companyEmail && c.email.toLowerCase() === params.companyEmail.toLowerCase())
-    );
-
-    if (idx === -1) {
-      return null;
-    }
-
-    const limits = PLAN_LIMITS[params.requestedPlan] || PLAN_LIMITS.PROFESSIONAL;
-
-    if (params.autoActivate) {
-      list[idx] = {
-        ...list[idx],
-        status: 'APPROVED',
-        plan: params.requestedPlan,
-        maxProjects: limits.maxProjects,
-        maxUsers: limits.maxUsers,
-        billingCycle: params.billingCycle,
-        subscriptionStatus: 'ACTIVE',
-        requestedPlan: undefined,
-        paymentReference: params.paymentReference,
-        paymentMethod: params.paymentMethod.toUpperCase(),
-        paymentSubmittedAt: new Date().toISOString(),
-      };
-    } else {
-      list[idx] = {
-        ...list[idx],
-        requestedPlan: params.requestedPlan,
-        billingCycle: params.billingCycle,
-        subscriptionStatus: 'PENDING_APPROVAL',
-        paymentReference: params.paymentReference,
-        paymentMethod: params.paymentMethod.toUpperCase(),
-        paymentSubmittedAt: new Date().toISOString(),
-      };
-    }
-
-    this.saveClientCompanies(list);
-    this.syncCompanyToFirestore(list[idx]);
-    return list[idx];
-  }
-
-  approveCompany(companyId: string, approvedBy: string = 'Admin'): RegisteredClientCompany | null {
-    const list = this.getClientCompanies();
-    const idx = list.findIndex(c => c.id === companyId);
-    if (idx === -1) return null;
-
-    const targetPlan = list[idx].requestedPlan || normalizePlan(list[idx].plan);
-    const limits = PLAN_LIMITS[targetPlan];
-
-    list[idx] = {
-      ...list[idx],
-      status: 'APPROVED',
-      plan: targetPlan,
-      maxProjects: list[idx].requestedPlan ? limits.maxProjects : (list[idx].maxProjects || limits.maxProjects),
-      maxUsers: list[idx].requestedPlan ? limits.maxUsers : (list[idx].maxUsers || limits.maxUsers),
-      subscriptionStatus: targetPlan === 'TRIAL' ? 'TRIAL' : 'ACTIVE',
-      requestedPlan: undefined,
-      approvedAt: new Date().toISOString(),
-      approvedBy,
-    };
-
-    this.saveClientCompanies(list);
-    this.syncCompanyToFirestore(list[idx]);
-
-    // Also auto-approve associated users for this company
-    const users = this.getUsers();
-    let usersChanged = false;
-    users.forEach(u => {
-      if (u.companyId === companyId && !u.approved) {
-        u.approved = true;
-        u.approvedAt = new Date().toISOString();
-        u.approvedBy = approvedBy;
-        usersChanged = true;
-        this.syncUserToFirestore(u);
-      }
-    });
-    if (usersChanged) {
-      this.saveUsers(users);
-    }
-
-    return list[idx];
-  }
-
-  rejectCompany(companyId: string, reason: string = 'Incomplete documentation or verification issue'): RegisteredClientCompany | null {
-    const list = this.getClientCompanies();
-    const idx = list.findIndex(c => c.id === companyId);
-    if (idx === -1) return null;
-
-    list[idx] = {
-      ...list[idx],
-      status: 'REJECTED',
-      rejectionReason: reason,
-    };
-
-    this.saveClientCompanies(list);
-    this.syncCompanyToFirestore(list[idx]);
-    return list[idx];
-  }
-
-  // --- USERS & LOGIN APPROVALS ---
-  getUsers(): AppUserProfile[] {
-    const raw = localStorage.getItem(STORAGE_KEYS.APP_USERS);
-    if (!raw) {
-      this.saveUsers(INITIAL_USERS);
-      return INITIAL_USERS;
-    }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return INITIAL_USERS;
-    }
-  }
-
-  saveUsers(list: AppUserProfile[]): void {
-    localStorage.setItem(STORAGE_KEYS.APP_USERS, JSON.stringify(list));
-  }
-
-  approveUser(uid: string, assignedRole?: UserRole, approvedBy: string = 'Admin'): AppUserProfile | null {
-    const list = this.getUsers();
-    const idx = list.findIndex(u => u.uid === uid);
-    if (idx === -1) return null;
-
-    list[idx] = {
-      ...list[idx],
-      approved: true,
-      role: assignedRole || list[idx].role || 'CLIENT',
-      approvedAt: new Date().toISOString(),
-      approvedBy,
-    };
-
-    this.saveUsers(list);
-    this.syncUserToFirestore(list[idx]);
-    return list[idx];
-  }
-
-  rejectUser(uid: string): AppUserProfile | null {
-    const list = this.getUsers();
-    const idx = list.findIndex(u => u.uid === uid);
-    if (idx === -1) return null;
-
-    list[idx] = {
-      ...list[idx],
-      approved: false,
-    };
-
-    this.saveUsers(list);
-    this.syncUserToFirestore(list[idx]);
-    return list[idx];
-  }
-
-  updateUserRole(uid: string, newRole: UserRole): AppUserProfile | null {
-    const list = this.getUsers();
-    const idx = list.findIndex(u => u.uid === uid);
-    if (idx === -1) return null;
-
-    list[idx] = {
-      ...list[idx],
-      role: newRole,
-      saasRole: newRole === 'ADMIN' ? 'PLATFORM_ADMIN' : newRole === 'ESTIMATION_ENGINEER' ? 'ESTIMATION_ENGINEER' : 'COMPANY_OWNER',
-    };
-
-    this.saveUsers(list);
-    this.syncUserToFirestore(list[idx]);
-    return list[idx];
+    this.memoryTenants = [newComp, ...this.memoryTenants.filter(t => t.id !== id)];
+    return newComp;
   }
 
   updateUserPassword(uid: string, newPassword: string): AppUserProfile | null {
-    const list = this.getUsers();
-    const idx = list.findIndex(u => u.uid === uid);
-    if (idx === -1) return null;
-    list[idx].password = newPassword;
-    this.saveUsers(list);
-    return list[idx];
-  }
-
-  // Get active session user
-  getCurrentUser(): AppUserProfile {
-    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_ACTIVE_USER);
-    if (raw) {
-      try {
-        return JSON.parse(raw);
-      } catch {}
+    const match = this.memoryUsers.find(u => u.uid === uid);
+    if (match) {
+      match.password = newPassword;
+      updateDoc(doc(db, 'users', uid), { password: newPassword }).catch(err => {
+        console.warn('updateUserPassword notice:', err);
+      });
+      return match;
     }
-    const admin = INITIAL_USERS[0];
-    localStorage.setItem(STORAGE_KEYS.CURRENT_ACTIVE_USER, JSON.stringify(admin));
-    return admin;
-  }
-
-  setCurrentUser(user: AppUserProfile): void {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_ACTIVE_USER, JSON.stringify(user));
+    return null;
   }
 }
 

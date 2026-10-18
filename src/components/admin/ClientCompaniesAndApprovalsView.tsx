@@ -103,37 +103,37 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     return companies.filter(c => {
       const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
       const matchesSearch = 
-        c.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.companyCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.tradeLicenseNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.city.toLowerCase().includes(searchQuery.toLowerCase());
+        (c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.companyCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.tradeLicenseNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.contactPerson || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.city || '').toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesSearch;
     });
   }, [companies, statusFilter, searchQuery]);
 
   // Handlers for Company Approval
-  const handleApproveCompany = (companyId: string) => {
-    const updated = authApprovalService.approveCompany(companyId, 'Admin');
+  const handleApproveCompany = async (companyId: string) => {
+    const updated = await authApprovalService.approveCompany(companyId, 'Admin');
     if (updated) {
       refreshData();
       showNotification(`Company "${updated.companyName}" & associated users approved!`);
     }
   };
 
-  const handleApprovePlanUpgrade = (company: RegisteredClientCompany) => {
+  const handleApprovePlanUpgrade = async (company: RegisteredClientCompany) => {
     if (!company.requestedPlan) return;
-    const updated = authApprovalService.updateCompanyPlanAndQuota(company.id, company.requestedPlan);
+    const updated = await authApprovalService.updateCompanyPlanAndQuota(company.id, company.requestedPlan);
     if (updated) {
       refreshData();
       showNotification(`Verified payment (${company.paymentReference}) & upgraded "${updated.companyName}" to ${updated.plan} (${updated.maxProjects} projects)!`);
     }
   };
 
-  const handleSaveCompanyPlanAndQuota = () => {
+  const handleSaveCompanyPlanAndQuota = async () => {
     if (!selectedCompany) return;
-    const updated = authApprovalService.updateCompanyPlanAndQuota(
+    const updated = await authApprovalService.updateCompanyPlanAndQuota(
       selectedCompany.id,
       selectedPlanInput,
       customQuotaInput
@@ -145,8 +145,8 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
     }
   };
 
-  const handleRejectCompany = (companyId: string) => {
-    const updated = authApprovalService.rejectCompany(companyId, 'Documentation verification required');
+  const handleRejectCompany = async (companyId: string) => {
+    const updated = await authApprovalService.rejectCompany(companyId, 'Documentation verification required');
     if (updated) {
       refreshData();
       showNotification(`Company "${updated.companyName}" status set to REJECTED.`);
@@ -154,28 +154,22 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
   };
 
   // Handlers for User Approval
-  const handleApproveUser = (uid: string, role?: UserRole) => {
-    const updated = authApprovalService.approveUser(uid, role, 'Chief Admin');
-    if (updated) {
-      refreshData();
-      showNotification(`User "${updated.fullName}" (${updated.email}) approved with role ${updated.role}!`);
-    }
+  const handleApproveUser = async (uid: string, role?: UserRole) => {
+    await authApprovalService.approveUser(uid, role, 'Chief Admin');
+    refreshData();
+    showNotification('User approved successfully!');
   };
 
-  const handleRejectUser = (uid: string) => {
-    const updated = authApprovalService.rejectUser(uid);
-    if (updated) {
-      refreshData();
-      showNotification(`User "${updated.email}" approval revoked.`);
-    }
+  const handleRejectUser = async (uid: string) => {
+    await authApprovalService.rejectUser(uid);
+    refreshData();
+    showNotification('User approval status set to Rejected.');
   };
 
-  const handleRoleChange = (uid: string, newRole: UserRole) => {
-    const updated = authApprovalService.updateUserRole(uid, newRole);
-    if (updated) {
-      refreshData();
-      showNotification(`User role updated to ${newRole}`);
-    }
+  const handleRoleChange = async (uid: string, newRole: UserRole) => {
+    await authApprovalService.updateUserRole(uid, newRole);
+    refreshData();
+    showNotification(`User role updated to ${newRole}`);
   };
 
   const handleSaveUserPassword = (uid: string) => {
@@ -190,7 +184,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
   };
 
   // Register company submit
-  const handleRegisterCompanySubmit = (e: React.FormEvent) => {
+  const handleRegisterCompanySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompanyForm.companyName || !newCompanyForm.email) {
       alert('Company Name and Email are required.');
@@ -199,7 +193,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
 
     const created = authApprovalService.registerCompany(newCompanyForm);
     // Also approve & create login user credentials so the client can sign in immediately
-    authApprovalService.approveCompany(created.id, 'Admin');
+    await authApprovalService.approveCompany(created.id, 'Admin');
     const createdUser = authApprovalService.registerUserSignup(
       newCompanyForm.email,
       newCompanyForm.contactPerson || newCompanyForm.companyName,
@@ -208,7 +202,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
       newCompanyForm.initialPassword || 'Client@2026',
       created.companyCode
     );
-    authApprovalService.approveUser(createdUser.uid, 'COMPANY_OWNER', 'Admin');
+    await authApprovalService.approveUser(createdUser.uid, 'COMPANY_OWNER', 'Admin');
 
     setShowRegisterModal(false);
     refreshData();
@@ -620,7 +614,7 @@ export const ClientCompaniesAndApprovalsView: React.FC<ClientCompaniesAndApprova
                       <button
                         onClick={() => {
                           setSelectedCompany(company);
-                          setSelectedPlanInput(company.plan || 'TRIAL');
+                          setSelectedPlanInput((company.plan as SaaSPlan) || 'TRIAL');
                           setCustomQuotaInput(company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2);
                         }}
                         className="text-cyan-700 hover:text-cyan-900 text-xs font-bold flex items-center gap-1 bg-cyan-50 hover:bg-cyan-100 px-2.5 py-1 rounded transition cursor-pointer"

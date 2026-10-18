@@ -71,43 +71,36 @@ import { FacebookLoginScreen } from './components/auth/FacebookLoginScreen';
 import { PredefinedAssembliesView } from './components/assemblies/PredefinedAssembliesView';
 import { ProjectDocumentationModal } from './components/documentation/ProjectDocumentationModal';
 import { ClientCompaniesAndApprovalsView } from './components/admin/ClientCompaniesAndApprovalsView';
-import { authApprovalService, PLAN_LIMITS } from './services/authApprovalService';
+import { authApprovalService, PLAN_LIMITS, AppUserProfile, RegisteredClientCompany } from './services/authApprovalService';
 import { Lock, Sparkles, AlertCircle, CreditCard } from 'lucide-react';
-import { auth } from './lib/firebase';
-import { signOut } from 'firebase/auth';
+import { auth, db } from './lib/firebase';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { apiClient } from './services/apiClient';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<NavView>('dashboard');
 
-  // SaaS Multi-Tenant State
-  const [company, setCompany] = useState<CompanyTenant>(() => {
-    const saved = localStorage.getItem('switchgear_saas_company');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return {
-      id: 1,
-      companyCode: 'EMIRATES-LV-01',
-      companyName: 'Emirates Switchgear Manufacturing LLC',
-      tradeLicenseNo: 'CN-1029384',
-      country: 'United Arab Emirates',
-      city: 'Dubai',
-      address: 'Al Quoz Industrial Area 4, Dubai, UAE',
-      phone: '+971 4 345 6789',
-      email: 'sales@emiratesswitchgear.ae',
-      vatTrn: '100234567800003',
-      currency: 'AED',
-      defaultCostingMethod: 'MARKUP',
-      defaultMarginPercent: 15.00,
-      defaultVatPercent: 5.00,
-      plan: 'PROFESSIONAL',
-      subscriptionStatus: 'ACTIVE',
-      maxProjects: 50,
-      maxUsers: 5,
-    };
+  // SaaS Multi-Tenant State (100% Cloud Firebase - Zero localStorage)
+  const [company, setCompany] = useState<CompanyTenant>({
+    id: 1,
+    companyCode: 'EMIRATES-LV-01',
+    companyName: 'Emirates Switchgear Manufacturing LLC',
+    tradeLicenseNo: 'CN-1029384',
+    country: 'United Arab Emirates',
+    city: 'Dubai',
+    address: 'Al Quoz Industrial Area 4, Dubai, UAE',
+    phone: '+971 4 345 6789',
+    email: 'sales@emiratesswitchgear.ae',
+    vatTrn: '100234567800003',
+    currency: 'AED',
+    defaultCostingMethod: 'MARKUP',
+    defaultMarginPercent: 15.00,
+    defaultVatPercent: 5.00,
+    plan: 'PROFESSIONAL',
+    subscriptionStatus: 'ACTIVE',
+    maxProjects: 50,
+    maxUsers: 5,
   });
 
   const [subscription, setSubscription] = useState<SaaSSubscription | null>({
@@ -122,16 +115,9 @@ export default function App() {
     autoRenew: true,
   });
 
-  // User session: starts null unless restored from active session in localStorage
-  const [currentUser, setCurrentUser] = useState<SaaSUser | null>(() => {
-    const saved = localStorage.getItem('switchgear_saas_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return null;
-  });
+  // User session: synchronized live with Firebase Auth (Zero localStorage)
+  const [currentUser, setCurrentUser] = useState<SaaSUser | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
@@ -199,7 +185,7 @@ export default function App() {
       if (!matched) return prev;
       const updated: CompanyTenant = {
         ...prev,
-        plan: matched.plan,
+        plan: (matched.plan as SaaSPlan) || 'PROFESSIONAL',
         maxProjects: matched.maxProjects,
         maxUsers: matched.maxUsers,
         requestedPlan: matched.requestedPlan,
@@ -210,7 +196,6 @@ export default function App() {
           ? 'TRIAL'
           : 'ACTIVE',
       };
-      localStorage.setItem('switchgear_saas_company', JSON.stringify(updated));
       return updated;
     });
   }, []);
@@ -262,6 +247,62 @@ export default function App() {
     loadData();
     syncActiveCompanyRecord();
   }, [loadData, syncActiveCompanyRecord]);
+
+  // Real-time Firebase Auth session persistence across page reloads & devices (Zero localStorage)
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+            const profile = userSnap.data() as AppUserProfile;
+            const isAdmin = profile.role === 'Admin' || fbUser.email?.toLowerCase() === 'admin@switchgearestimator.com' || fbUser.email?.toLowerCase() === 'admin@lvswitchgear.com';
+
+            if (profile.status === 'Approved' || isAdmin) {
+              const tenantSnap = await getDoc(doc(db, 'tenants', profile.tenantId));
+              const tenantData: RegisteredClientCompany = tenantSnap.exists()
+                ? (tenantSnap.data() as RegisteredClientCompany)
+                : {
+                    id: profile.tenantId,
+                    companyCode: profile.companyName?.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'TENANT',
+                    companyName: profile.companyName || 'Switchgear Enterprise',
+                    status: 'APPROVED',
+                    plan: 'Free Trial',
+                    projectsUsed: 0,
+                    projectsQuota: 1,
+                    maxProjects: 1,
+                    maxUsers: 2,
+                    subscriptionStatus: 'Trial',
+                  };
+
+              const session = authApprovalService.buildSessionForCompanyAndUser(tenantData, profile);
+              storageService.setActiveTenant(profile.tenantId, profile.companyName);
+              setCurrentUser(session.user);
+              setCompany(session.company);
+              setSubscription(session.subscription);
+
+              await storageService.loadTenantProjectsFromFirestore(profile.tenantId);
+              loadData();
+            } else {
+              setCurrentUser(null);
+            }
+          } else {
+            setCurrentUser(null);
+          }
+        } catch (err) {
+          console.warn('onAuthStateChanged session sync notice:', err);
+          setCurrentUser(null);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [loadData]);
 
   // Phase 2 Project Navigation Handlers
   const handleSelectProjectForEstimation = (proj: Project) => {
@@ -356,11 +397,13 @@ export default function App() {
   const maxProjectsAllowed = company.maxProjects || PLAN_LIMITS[company.plan || 'TRIAL']?.maxProjects || 2;
 
   // Phase 2 Project CRUD (with strict Estimation Quota check)
-  const handleSaveProject = (projectData: any) => {
+  const handleSaveProject = async (projectData: any) => {
     if (projectData.projectID) {
       storageService.updateProject(projectData);
     } else {
-      if (projects.length >= maxProjectsAllowed) {
+      const tenantId = company.companyCode || String(company.id);
+      const quotaCheck = await authApprovalService.checkProjectQuota(tenantId);
+      if (!quotaCheck.allowed) {
         setIsProjectModalOpen(false);
         setPaywallReason('quota');
         return;
@@ -562,7 +605,6 @@ export default function App() {
         subscriptionStatus: 'ACTIVE',
       };
       setCompany(updatedCompany);
-      localStorage.setItem('switchgear_saas_company', JSON.stringify(updatedCompany));
       setSubscription(prev => prev ? { ...prev, plan: newPlan, billingCycle, maxProjects: limits.maxProjects, maxUsers: limits.maxUsers } : null);
     } else {
       authApprovalService.submitPaymentUpgradeRequest(
@@ -577,7 +619,6 @@ export default function App() {
         subscriptionStatus: 'PENDING_APPROVAL',
       };
       setCompany(updatedCompany);
-      localStorage.setItem('switchgear_saas_company', JSON.stringify(updatedCompany));
     }
 
     try {
@@ -596,28 +637,28 @@ export default function App() {
     try {
       const res = await apiClient.put('/api/tenant/company', updated);
       if (res) {
-        setCompany(prev => {
-          const next = { ...prev, ...res };
-          localStorage.setItem('switchgear_saas_company', JSON.stringify(next));
-          return next;
-        });
+        setCompany(prev => ({ ...prev, ...res }));
       }
     } catch (e) {
-      setCompany(prev => {
-        const next = { ...prev, ...updated };
-        localStorage.setItem('switchgear_saas_company', JSON.stringify(next));
-        return next;
-      });
+      setCompany(prev => ({ ...prev, ...updated }));
     }
+    // Update company in Firestore tenants collection
+    const tenantId = company.companyCode || String(company.id);
+    updateDoc(doc(db, 'tenants', tenantId), updated).catch((err: any) => {
+      console.warn('Update tenant Firestore notice:', err);
+    });
   };
 
-  const handleLoginSuccess = (user: SaaSUser, tenantCompany: CompanyTenant) => {
-    localStorage.setItem('switchgear_saas_user', JSON.stringify(user));
-    localStorage.setItem('switchgear_saas_company', JSON.stringify(tenantCompany));
+  const handleLoginSuccess = (user: SaaSUser, tenantCompany: CompanyTenant, userSub?: SaaSSubscription) => {
+    storageService.setActiveTenant(tenantCompany.companyCode || String(tenantCompany.id), tenantCompany.companyName);
     setCurrentUser(user);
     setCompany(tenantCompany);
-    // Load isolated tenant projects immediately after setting switchgear_saas_company
-    loadData();
+    if (userSub) {
+      setSubscription(userSub);
+    }
+    storageService.loadTenantProjectsFromFirestore(tenantCompany.companyCode || String(tenantCompany.id)).then(() => {
+      loadData();
+    });
   };
 
   const handleLogout = async () => {
@@ -626,24 +667,38 @@ export default function App() {
     } catch (e) {
       console.warn('Firebase signOut notice:', e);
     }
-    localStorage.removeItem('switchgear_saas_user');
-    localStorage.removeItem('switchgear_saas_company');
     setCurrentUser(null);
   };
 
   const handleSwitchTenant = (newCompany: CompanyTenant, newUser: SaaSUser) => {
-    localStorage.setItem('switchgear_saas_user', JSON.stringify(newUser));
-    localStorage.setItem('switchgear_saas_company', JSON.stringify(newCompany));
+    storageService.setActiveTenant(newCompany.companyCode || String(newCompany.id), newCompany.companyName);
     setCompany(newCompany);
     setCurrentUser(newUser);
-    loadData();
+    storageService.loadTenantProjectsFromFirestore(newCompany.companyCode || String(newCompany.id)).then(() => {
+      loadData();
+    });
   };
 
   // --------------------------------------------------------------------------
   // AUTHENTICATION GATE:
+  // Show clean loading state while syncing session with Firebase Auth & Firestore
+  // --------------------------------------------------------------------------
+  if (isAuthLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-900 text-white font-sans">
+        <div className="flex flex-col items-center gap-4 text-center px-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-cyan-500 border-t-transparent shadow-lg shadow-cyan-500/20"></div>
+          <div>
+            <h3 className="text-base font-semibold text-white tracking-wide">LV Switchgear OS</h3>
+            <p className="text-xs text-slate-400 mt-1">Synchronizing secure session with Cloud Firestore...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Website dashboard and panels are strictly visible ONLY AFTER LOGIN.
   // When no active session exists, display the Facebook-Style Login Gateway.
-  // --------------------------------------------------------------------------
   if (!currentUser) {
     return (
       <FacebookLoginScreen

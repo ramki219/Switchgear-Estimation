@@ -188,9 +188,9 @@ export const SaaSBillingView: React.FC<SaaSBillingViewProps> = ({
     setCheckoutModalOpen(true);
   };
 
-  const handleSavePaymentSettings = (e: React.FormEvent) => {
+  const handleSavePaymentSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    const saved = authApprovalService.savePaymentSettings(settingsForm);
+    const saved = await authApprovalService.savePaymentSettings(settingsForm);
     setPaymentSettings(saved);
     setShowAdminSettingsModal(false);
     setSuccessMessage('Platform Bank Account, VAT TRN, and Stripe Payment Links saved successfully!');

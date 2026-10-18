@@ -60,7 +60,7 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
   const [regSuccessMessage, setRegSuccessMessage] = useState<string | null>(null);
 
   // 1. Handle Standard Email / Password Login (Strictly Verified via AuthApprovalService)
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -77,69 +77,39 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const authResult = authApprovalService.authenticateUser(cleanEmail, password);
-      setIsLoading(false);
-
+    try {
+      const authResult = await authApprovalService.authenticateUser(cleanEmail, password);
       if (!authResult.success || !authResult.user || !authResult.company) {
         setErrorMessage(authResult.error || 'Invalid email or password.');
         return;
       }
 
       onLoginSuccess(authResult.user, authResult.company, authResult.subscription);
-    }, 350);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Authentication failed. Please check your connection.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 2. Real Google Sign-In with Firebase Authentication (Assigns TRIAL Quota for New Users)
+  // 2. Real Google Sign-In with Firebase Authentication
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      const fbUser = result.user;
-
-      const userEmail = (fbUser.email || 'engineer@switchgear-enterprise.com').toLowerCase();
-      const existingUsers = authApprovalService.getUsers();
-      const existingMatch = existingUsers.find(u => u.email.toLowerCase() === userEmail);
-
-      if (existingMatch) {
-        if (!existingMatch.approved) {
-          setErrorMessage('Your account is pending administrator approval. Please contact support.');
-          return;
-        }
-        const companies = authApprovalService.getClientCompanies();
-        const comp = companies.find(c => c.id === existingMatch.companyId) || companies[0];
-        const session = authApprovalService.buildSessionForCompanyAndUser(comp, existingMatch);
-        onLoginSuccess(session.user, session.company, session.subscription);
+      const authResult = await authApprovalService.authenticateWithGoogle();
+      if (!authResult.success) {
+        setErrorMessage(authResult.error || 'Google Sign-In failed.');
         return;
       }
 
-      // Register new Google user on Free Trial (2 Projects Quota)
-      const nameParts = (fbUser.displayName || 'Authorized Engineer').split(' ');
-      const firstName = nameParts[0] || 'Authorized';
-      const lastName = nameParts.slice(1).join(' ') || 'Engineer';
-      const userDomain = userEmail.split('@')[1] || 'switchgear.ae';
-      const companyName = fbUser.displayName
-        ? `${firstName} Switchgear Engineering LLC`
-        : `${userDomain.split('.')[0].toUpperCase()} Switchgear Manufacturing LLC`;
-
-      const regResult = authApprovalService.registerCustomerAccount({
-        firstName,
-        lastName,
-        email: userEmail,
-        password: `google-sso-${fbUser.uid.slice(0, 8)}`,
-        companyName,
-        city: 'Dubai',
-        role: 'COMPANY_OWNER',
-      });
-
-      if (regResult.requiresApproval) {
+      if (authResult.requiresApproval) {
         setErrorMessage('Your Google account has been registered and is pending administrator approval.');
         return;
       }
 
-      if (regResult.success && regResult.user && regResult.company) {
-        onLoginSuccess(regResult.user, regResult.company, regResult.subscription);
+      if (authResult.user && authResult.company) {
+        onLoginSuccess(authResult.user, authResult.company, authResult.subscription);
       }
     } catch (err: any) {
       console.warn('Firebase popup notice:', err);
@@ -153,8 +123,8 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
     }
   };
 
-  // 3. Handle Registration Form Submission (Creates Free Trial Account with 2 Estimations Quota)
-  const handleRegister = (e: React.FormEvent) => {
+  // 3. Handle Registration Form Submission (Creates Free Trial Account with 1 Estimation Quota)
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError(null);
     setRegSuccessMessage(null);
@@ -179,64 +149,75 @@ export const FacebookLoginScreen: React.FC<FacebookLoginScreenProps> = ({
       return;
     }
 
-    const result = authApprovalService.registerCustomerAccount({
-      firstName: regFirstName,
-      lastName: regLastName,
-      email: regEmail,
-      password: regPassword,
-      companyName: regCompanyName,
-      city: regEmirate,
-      role: regRole,
-    });
+    setIsLoading(true);
+    try {
+      const result = await authApprovalService.registerCustomerAccount({
+        firstName: regFirstName,
+        lastName: regLastName,
+        email: regEmail,
+        password: regPassword,
+        companyName: regCompanyName,
+        city: regEmirate,
+        role: regRole,
+      });
 
-    if (!result.success) {
-      setRegError(result.error || 'Registration failed.');
-      return;
-    }
+      if (!result.success) {
+        setRegError(result.error || 'Registration failed.');
+        return;
+      }
 
-    if (result.requiresApproval) {
+      if (result.requiresApproval) {
+        setRegSuccess(true);
+        setRegSuccessMessage('Account submitted for Administrator Approval! You will be able to log in once approved.');
+        setTimeout(() => {
+          setShowRegisterModal(false);
+          setRegSuccess(false);
+          setErrorMessage('Your account registration is pending administrator approval.');
+        }, 2200);
+        return;
+      }
+
       setRegSuccess(true);
-      setRegSuccessMessage('Account submitted for Administrator Approval! You will be able to log in once approved.');
+      setRegSuccessMessage('Free Trial account created (1 Free Project Estimation included)! Logging you in...');
       setTimeout(() => {
         setShowRegisterModal(false);
         setRegSuccess(false);
-        setErrorMessage('Your account registration is pending administrator approval.');
-      }, 2200);
-      return;
+        if (result.user && result.company) {
+          onLoginSuccess(result.user, result.company, result.subscription);
+        }
+      }, 800);
+    } catch (err: any) {
+      setRegError(err.message || 'Registration failed.');
+    } finally {
+      setIsLoading(false);
     }
-
-    setRegSuccess(true);
-    setRegSuccessMessage('Free Trial account created (2 Free Project Estimations included)! Logging you in...');
-    setTimeout(() => {
-      setShowRegisterModal(false);
-      setRegSuccess(false);
-      if (result.user && result.company) {
-        onLoginSuccess(result.user, result.company, result.subscription);
-      }
-    }, 800);
   };
 
   // 4. Quick Evaluation Login helper (Uses verified accounts in AuthApprovalService)
-  const handleQuickDemoLogin = (accountType: 'admin' | 'emirates' | 'gulf') => {
-    if (accountType === 'admin') {
-      const res = authApprovalService.authenticateUser('admin@lvswitchgear.com', 'Admin@2026');
+  const handleQuickDemoLogin = async (accountType: 'admin' | 'emirates' | 'gulf') => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      let email = 'admin@switchgearestimator.com';
+      let pass = 'Admin@2026';
+      if (accountType === 'emirates') {
+        email = 'tariq.m@alghandiswitchgear.ae';
+        pass = 'Client@2026';
+      } else if (accountType === 'gulf') {
+        email = 'suresh.k@danwayeme.com';
+        pass = 'Client@2026';
+      }
+
+      const res = await authApprovalService.authenticateUser(email, pass);
       if (res.success && res.user && res.company) {
         onLoginSuccess(res.user, res.company, res.subscription);
+      } else {
+        setErrorMessage(res.error || 'Demo login failed.');
       }
-      return;
-    }
-    if (accountType === 'emirates') {
-      const res = authApprovalService.authenticateUser('tariq.m@alghandiswitchgear.ae', 'Client@2026');
-      if (res.success && res.user && res.company) {
-        onLoginSuccess(res.user, res.company, res.subscription);
-      }
-      return;
-    }
-    if (accountType === 'gulf') {
-      const res = authApprovalService.authenticateUser('suresh.k@danwayeme.com', 'Client@2026');
-      if (res.success && res.user && res.company) {
-        onLoginSuccess(res.user, res.company, res.subscription);
-      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Demo login failed.');
+    } finally {
+      setIsLoading(false);
     }
   };
 

@@ -2,29 +2,103 @@
   "entities": {
     "user": {
       "title": "User",
-      "description": "Represents an application user with role and approval status.",
+      "description": "User profile document storing authentication profile and approval status.",
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
+        "name": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["ADMIN", "CLIENT"] },
-        "approved": { "type": "boolean" },
-        "companyId": { "type": "string" }
+        "phone": { "type": "string" },
+        "companyName": { "type": "string" },
+        "gstNumber": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "Estimator", "COMPANY_OWNER"] },
+        "status": { "type": "string", "enum": ["Approved", "Pending", "Rejected"] },
+        "tenantId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "email", "role", "approved"]
+      "required": ["uid", "email", "name", "role", "status", "tenantId"]
     },
-    "companyRegistration": {
-      "title": "Company Registration",
-      "description": "Represents a pending company registration request.",
+    "tenant": {
+      "title": "Tenant",
+      "description": "Tenant company account storing subscription tier and project quotas.",
       "type": "object",
       "properties": {
-        "registrationId": { "type": "string" },
+        "id": { "type": "string" },
+        "companyCode": { "type": "string" },
         "companyName": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
-        "submittedAt": { "type": "string", "format": "date-time" }
+        "plan": { "type": "string" },
+        "projectsUsed": { "type": "number" },
+        "projectsQuota": { "type": "number" },
+        "subscriptionStatus": { "type": "string" },
+        "subscriptionExpiryDate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["registrationId", "companyName", "email", "status", "submittedAt"]
+      "required": ["companyName", "plan", "projectsUsed", "projectsQuota", "subscriptionStatus"]
+    },
+    "subscriptionRequest": {
+      "title": "Subscription Request",
+      "description": "Customer plan upgrade request with payment transaction reference.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "userEmail": { "type": "string", "format": "email" },
+        "requestedPlan": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "transactionReference": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "requestedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tenantId", "requestedPlan", "transactionReference", "status"]
+    },
+    "paymentConfig": {
+      "title": "Payment Configuration",
+      "description": "Global Owner Admin settings for platform payments, UPI, and bank transfers.",
+      "type": "object",
+      "properties": {
+        "upiId": { "type": "string" },
+        "upiMerchantName": { "type": "string" },
+        "bankAccountName": { "type": "string" },
+        "bankAccountNumber": { "type": "string" },
+        "bankIfsc": { "type": "string" },
+        "bankName": { "type": "string" },
+        "razorpayPaymentLink": { "type": "string" },
+        "whatsappSupportNumber": { "type": "string" },
+        "autoApproveUsers": { "type": "boolean" },
+        "defaultTrialProjectsLimit": { "type": "number" }
+      }
+    },
+    "project": {
+      "title": "Project",
+      "description": "Switchgear estimation project record scoped by tenantId.",
+      "type": "object",
+      "properties": {
+        "projectID": { "type": "number" },
+        "projectCode": { "type": "string" },
+        "projectName": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectName", "tenantId"]
+    },
+    "component": {
+      "title": "Component",
+      "description": "Switchgear component master catalogue item.",
+      "type": "object",
+      "properties": {
+        "componentID": { "type": "number" },
+        "componentCode": { "type": "string" },
+        "componentName": { "type": "string" },
+        "categoryID": { "type": "number" },
+        "listPrice": { "type": "number" }
+      },
+      "required": ["componentCode", "componentName"]
     }
   },
   "firestore": {
@@ -32,9 +106,25 @@
       "schema": "user",
       "description": "Stores user profiles."
     },
-    "/companyRegistrations/{registrationId}": {
-      "schema": "companyRegistration",
-      "description": "Stores pending company registrations."
+    "/tenants/{tenantId}": {
+      "schema": "tenant",
+      "description": "Stores tenant company accounts and quotas."
+    },
+    "/subscriptionRequests/{requestId}": {
+      "schema": "subscriptionRequest",
+      "description": "Stores customer plan upgrade and payment requests."
+    },
+    "/settings/paymentConfig": {
+      "schema": "paymentConfig",
+      "description": "Stores global platform payment settings."
+    },
+    "/projects/{projectId}": {
+      "schema": "project",
+      "description": "Stores switchgear estimation projects."
+    },
+    "/components/{componentId}": {
+      "schema": "component",
+      "description": "Stores electrical switchgear catalogue components."
     }
   }
 }
